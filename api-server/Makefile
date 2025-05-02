@@ -1,4 +1,19 @@
-# Simple Makefile for a Go project
+ifneq (,$(wildcard .env))
+  include .env
+  export
+endif
+
+COMPOSE            := docker compose
+COMPOSE_FILES_DEV  := -f docker-compose.yml -f docker-compose.dev.yml
+COMPOSE_FILES_PROD := -f docker-compose.yml
+
+# shorthand for whichever compose file list we need
+ifeq ($(APP_ENV),prod)
+  COMPOSE_FILES := $(COMPOSE_FILES_PROD)
+else
+  COMPOSE_FILES := $(COMPOSE_FILES_DEV)
+endif
+
 
 # Build the application
 all: build test
@@ -10,23 +25,16 @@ build:
 # Run the application
 run:
 	@go run cmd/api/main.go
-# Create DB container
-docker-run:
-	@if docker compose up --build 2>/dev/null; then \
-		: ; \
-	else \
-		echo "Falling back to Docker Compose V1"; \
-		docker-compose up --build; \
-	fi
 
-# Shutdown DB container
+# start app and db
+docker-run:
+	@echo ">>> Starting in '$(APP_ENV)' APP_ENV..."
+	@$(COMPOSE) $(COMPOSE_FILES) up --build
+
+# stop app and db
 docker-down:
-	@if docker compose down 2>/dev/null; then \
-		: ; \
-	else \
-		echo "Falling back to Docker Compose V1"; \
-		docker-compose down; \
-	fi
+	@echo ">>> Stopping all services..."
+	@$(COMPOSE) $(COMPOSE_FILES) down
 
 # Test the application
 test:
@@ -46,18 +54,24 @@ clean:
 # Live Reload
 watch:
 	@if command -v air > /dev/null; then \
+        air; \
+        echo "Watching...";\
+    else \
+        read -p "Go's 'air' is not installed on your machine. Do you want to install it? [Y/n] " choice; \
+        if [ "$$choice" != "n" ] && [ "$$choice" != "N" ]; then \
+            go install github.com/air-verse/air@latest; \
             air; \
             echo "Watching...";\
         else \
-            read -p "Go's 'air' is not installed on your machine. Do you want to install it? [Y/n] " choice; \
-            if [ "$$choice" != "n" ] && [ "$$choice" != "N" ]; then \
-                go install github.com/air-verse/air@latest; \
-                air; \
-                echo "Watching...";\
-            else \
-                echo "You chose not to install air. Exiting..."; \
-                exit 1; \
-            fi; \
-        fi
+            echo "You chose not to install air. Exiting..."; \
+            exit 1; \
+        fi; \
+    fi
 
-.PHONY: all build run test clean watch docker-run docker-down itest
+migrate-up:
+	@migrate -path ./migrations -database "$(DB_URL)" up
+
+migrate-down:
+	@migrate -path ./migrations -database "$(DB_URL)" down
+
+.PHONY: all build run test clean watch docker-run docker-down itest migrate-up migrate-down
