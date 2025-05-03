@@ -22,9 +22,13 @@ func (s *Server) RegisterRoutes() http.Handler {
 		MaxAge:           300,
 	}))
 
+	// miscellaneous
 	r.Get("/", s.HelloWorldHandler)
-
 	r.Get("/health", s.healthHandler)
+
+	// public
+	r.Post("/register", s.RegisterHandler)
+	r.Post("/login", s.LoginHandler)
 
 	return r
 }
