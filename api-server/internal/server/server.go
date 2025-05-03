@@ -18,7 +18,11 @@ type Server struct {
 	db database.Service
 }
 
-func NewServer() *http.Server {
+// NewServerFunc defines function type for server creation
+type NewServerFunc func() *http.Server
+
+// NewServer is the default implementation for creating a new HTTP server
+var NewServer = func() *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 	NewServer := &Server{
 		port: port,
@@ -28,7 +32,7 @@ func NewServer() *http.Server {
 
 	// Declare Server config
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", NewServer.port),
+		Addr:         fmt.Sprintf("0.0.0.0:%d", NewServer.port), // Listen on all interfaces
 		Handler:      NewServer.RegisterRoutes(),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,

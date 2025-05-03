@@ -21,8 +21,11 @@ func parseExpiry(s string) time.Duration {
 	return d
 }
 
+// TokenGeneratorFunc is a function type for token generation
+type TokenGeneratorFunc func(userID string) (string, error) 
+
 // GenerateToken creates a JWT containing the user ID.
-func GenerateToken(userID string) (string, error) {
+var GenerateToken TokenGeneratorFunc = func(userID string) (string, error) {
 	claims := jwt.RegisteredClaims{
 		Subject:   userID,
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiryDur)),
@@ -32,8 +35,11 @@ func GenerateToken(userID string) (string, error) {
 	return token.SignedString(secretKey)
 }
 
+// TokenValidatorFunc is a function type for token validation
+type TokenValidatorFunc func(tkn string) (*jwt.RegisteredClaims, error)
+
 // ValidateToken parses and validates the token string.
-func ValidateToken(tkn string) (*jwt.RegisteredClaims, error) {
+var ValidateToken TokenValidatorFunc = func(tkn string) (*jwt.RegisteredClaims, error) {
 	parsed, err := jwt.ParseWithClaims(tkn, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return secretKey, nil
 	})

@@ -78,6 +78,7 @@ func TestHealth(t *testing.T) {
 
 	stats := srv.Health()
 
+	// Basic health checks
 	if stats["status"] != "up" {
 		t.Fatalf("expected status to be up, got %s", stats["status"])
 	}
@@ -89,6 +90,23 @@ func TestHealth(t *testing.T) {
 	if stats["message"] != "It's healthy" {
 		t.Fatalf("expected message to be 'It's healthy', got %s", stats["message"])
 	}
+	
+	// Check for presence of DB stats
+	expectedStats := []string{
+		"open_connections",
+		"in_use",
+		"idle",
+		"wait_count",
+		"wait_duration",
+		"max_idle_closed",
+		"max_lifetime_closed",
+	}
+	
+	for _, stat := range expectedStats {
+		if _, ok := stats[stat]; !ok {
+			t.Errorf("expected %s stat to be present", stat)
+		}
+	}
 }
 
 func TestClose(t *testing.T) {
@@ -97,4 +115,35 @@ func TestClose(t *testing.T) {
 	if srv.Close() != nil {
 		t.Fatalf("expected Close() to return nil")
 	}
+}
+
+// TestDatabaseFailure tests health reporting when database is down
+func TestDatabaseFailure(t *testing.T) {
+	// Save the original dbInstance
+	originalInstance := dbInstance
+	defer func() {
+		// Restore the original dbInstance after test
+		dbInstance = originalInstance
+	}()
+	
+	// Create a service with a closed connection to simulate failure
+	srv := New()
+	s := srv.(*service)
+	
+	// Close the database connection
+	s.db.Close()
+	
+	// Now check health - should report down status
+	stats := s.Health()
+	
+	if stats["status"] != "down" {
+		t.Errorf("expected status to be down when database is closed, got %s", stats["status"])
+	}
+	
+	if _, ok := stats["error"]; !ok {
+		t.Errorf("expected error to be present when database is down")
+	}
+	
+	// Reset dbInstance to nil so next call to New() creates a fresh connection
+	dbInstance = nil
 }
