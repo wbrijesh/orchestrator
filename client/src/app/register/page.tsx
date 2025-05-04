@@ -74,7 +74,7 @@ export default function Register() {
 
     try {
       await register(email, password, firstName, lastName);
-      router.push("/account");
+      router.push("/home");
     } catch (err) {
       if (err instanceof Error) {
         setFormError(err.message);

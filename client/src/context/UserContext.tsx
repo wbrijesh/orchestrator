@@ -17,6 +17,7 @@ interface UserContextType {
   register: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
   logout: () => void;
   clearError: () => void;
+  getAuthHeader: () => { Authorization: string } | {};
 }
 
 // Interface for our API response format
@@ -36,6 +37,9 @@ interface AuthResponseData {
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
+
+// API URL base
+const API_URL = "http://localhost:8080";
 
 // Helper function to save token in both localStorage and cookie
 const saveToken = (token: string) => {
@@ -70,9 +74,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // This is now just a utility function to maintain API compatibility
   };
 
+  const getAuthHeader = () => {
+    const token = localStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const login = async (email: string, password: string): Promise<void> => {
     try {
-      const response = await fetch('http://localhost:8080/login', {
+      const response = await fetch(`${API_URL}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -110,7 +119,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const register = async (email: string, password: string, firstName: string, lastName: string): Promise<void> => {
     try {
-      const response = await fetch('http://localhost:8080/register', {
+      const response = await fetch(`${API_URL}/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -164,7 +173,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
       login, 
       register, 
       logout, 
-      clearError 
+      clearError,
+      getAuthHeader
     }}>
       {children}
     </UserContext.Provider>

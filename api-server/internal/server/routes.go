@@ -30,6 +30,18 @@ func (s *Server) RegisterRoutes() http.Handler {
 	r.Post("/register", s.RegisterHandler)
 	r.Post("/login", s.LoginHandler)
 
+	// protected routes
+	r.Group(func(r chi.Router) {
+		// Apply auth middleware to this group
+		r.Use(s.AuthMiddleware)
+
+		// Session routes
+		r.Post("/sessions", s.CreateSessionHandler)
+		r.Get("/sessions", s.GetUserSessionsHandler)
+		r.Post("/sessions/{id}/stop", s.StopSessionHandler)
+		r.Delete("/sessions/{id}", s.DeleteSessionHandler)
+	})
+
 	return r
 }
 

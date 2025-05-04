@@ -13,9 +13,9 @@ export function middleware(request: NextRequest) {
   const token = request.cookies.get('token')?.value;
   
   // If the user is already logged in and trying to access login or register page,
-  // redirect them to the account page
+  // redirect them to the home page
   if (isAuthPath && token) {
-    return NextResponse.redirect(new URL('/account', request.url));
+    return NextResponse.redirect(new URL('/home', request.url));
   }
   
   // Continue with the request

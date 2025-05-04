@@ -24,8 +24,16 @@ type Service interface {
 	// It returns an error if the connection cannot be closed.
 	Close() error
 
+	// User methods
 	CreateUser(ctx context.Context, u *User) (uuid.UUID, error)
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
+	
+	// Session methods
+	CreateSession(ctx context.Context, userID uuid.UUID, name string) (*Session, error)
+	GetSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]*Session, error)
+	GetSessionByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*Session, error)
+	StopSession(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*Session, error)
+	DeleteSession(ctx context.Context, id uuid.UUID, userID uuid.UUID) error
 }
 
 type service struct {

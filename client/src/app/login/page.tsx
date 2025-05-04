@@ -51,7 +51,7 @@ export default function Login() {
 
     try {
       await login(email, password);
-      router.push("/account");
+      router.push("/home");
     } catch (err) {
       if (err instanceof Error) {
         setFormError(err.message);
