@@ -104,7 +104,7 @@ describe('Login Page', () => {
     
     // Check navigation after successful login
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/account');
+      expect(mockPush).toHaveBeenCalledWith('/home');
     });
   });
 });

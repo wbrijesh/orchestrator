@@ -60,7 +60,7 @@ describe('Register Page', () => {
     const user = userEvent.setup();
     render(<Register />);
     
-    // Fill in first name but no last name
+    // Enter first name but no last name
     await user.type(screen.getByLabelText('First Name'), 'John');
     await user.click(screen.getByRole('button', { name: 'Register' }));
     
@@ -72,7 +72,7 @@ describe('Register Page', () => {
     const user = userEvent.setup();
     render(<Register />);
     
-    // Fill in names but invalid email
+    // Enter first name, last name, and invalid email
     await user.type(screen.getByLabelText('First Name'), 'John');
     await user.type(screen.getByLabelText('Last Name'), 'Doe');
     await user.type(screen.getByLabelText('Email'), 'invalid-email');
@@ -94,11 +94,12 @@ describe('Register Page', () => {
     const user = userEvent.setup();
     render(<Register />);
     
-    // Fill in valid data except short password
+    // Enter valid data except for short password
     await user.type(screen.getByLabelText('First Name'), 'John');
     await user.type(screen.getByLabelText('Last Name'), 'Doe');
     await user.type(screen.getByLabelText('Email'), 'john@example.com');
-    await user.type(screen.getByLabelText('Password'), '12345');
+    await user.type(screen.getByLabelText('Password'), 'pass');
+    await user.type(screen.getByLabelText('Confirm Password'), 'pass');
     await user.click(screen.getByRole('button', { name: 'Register' }));
     
     // Check for validation error
@@ -109,7 +110,7 @@ describe('Register Page', () => {
     const user = userEvent.setup();
     render(<Register />);
     
-    // Fill in valid data but passwords don't match
+    // Enter valid data except for mismatched passwords
     await user.type(screen.getByLabelText('First Name'), 'John');
     await user.type(screen.getByLabelText('Last Name'), 'Doe');
     await user.type(screen.getByLabelText('Email'), 'john@example.com');
@@ -139,16 +140,16 @@ describe('Register Page', () => {
     // Check that register function was called with correct arguments
     await waitFor(() => {
       expect(mockRegister).toHaveBeenCalledWith(
-        'john@example.com', 
-        'password123', 
-        'John', 
+        'john@example.com',
+        'password123',
+        'John',
         'Doe'
       );
     });
     
     // Check navigation after successful registration
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/account');
+      expect(mockPush).toHaveBeenCalledWith('/home');
     });
   });
 });
