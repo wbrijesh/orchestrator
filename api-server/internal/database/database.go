@@ -29,7 +29,7 @@ type Service interface {
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	
 	// Session methods
-	CreateSession(ctx context.Context, userID uuid.UUID, name string) (*Session, error)
+	CreateSession(ctx context.Context, userID uuid.UUID, name string, browserID, browserType, cdpURL string, headless bool, viewportW, viewportH int, userAgent *string) (*Session, error)
 	GetSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]*Session, error)
 	GetSessionByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*Session, error)
 	StopSession(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*Session, error)

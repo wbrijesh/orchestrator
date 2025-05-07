@@ -17,6 +17,14 @@ type Session struct {
 	Name      string
 	StartedAt time.Time
 	StoppedAt sql.NullTime
+	// Browser-specific fields
+	BrowserID   string
+	BrowserType string
+	CdpURL      string
+	Headless    bool
+	ViewportW   int
+	ViewportH   int
+	UserAgent   sql.NullString
 }
 
 // SessionView is the public representation of a Session
@@ -28,27 +36,61 @@ type SessionView struct {
 	StoppedAt *time.Time `json:"stopped_at"`
 	Active    bool      `json:"active"`
 	Duration  *string   `json:"duration"`
+	// Browser details
+	BrowserID   string  `json:"browser_id"`
+	BrowserType string  `json:"browser_type"`
+	CdpURL      string  `json:"cdp_url"`
+	Headless    bool    `json:"headless"`
+	ViewportW   int     `json:"viewport_width"`
+	ViewportH   int     `json:"viewport_height"`
+	UserAgent   *string `json:"user_agent,omitempty"`
 }
 
 // CreateSession inserts a new session
-func (s *service) CreateSession(ctx context.Context, userID uuid.UUID, name string) (*Session, error) {
+func (s *service) CreateSession(ctx context.Context, userID uuid.UUID, name string, browserID, browserType, cdpURL string, headless bool, viewportW, viewportH int, userAgent *string) (*Session, error) {
 	q := `
-		INSERT INTO sessions (user_id, name)
-		VALUES ($1, $2)
-		RETURNING id, user_id, name, started_at, stopped_at
+		INSERT INTO sessions (
+			user_id, name, browser_id, browser_type, cdp_url, 
+			headless, viewport_w, viewport_h, user_agent
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, user_id, name, started_at, stopped_at, browser_id, 
+		browser_type, cdp_url, headless, viewport_w, viewport_h, user_agent
 	`
 	session := &Session{
-		UserID: userID,
-		Name:   name,
+		UserID:      userID,
+		Name:        name,
+		BrowserID:   browserID,
+		BrowserType: browserType,
+		CdpURL:      cdpURL,
+		Headless:    headless,
+		ViewportW:   viewportW,
+		ViewportH:   viewportH,
+	}
+	
+	// Set user agent if provided
+	if userAgent != nil {
+		session.UserAgent = sql.NullString{String: *userAgent, Valid: true}
 	}
 
-	row := s.db.QueryRowContext(ctx, q, userID, name)
+	row := s.db.QueryRowContext(ctx, q, 
+		userID, name, browserID, browserType, cdpURL, 
+		headless, viewportW, viewportH, 
+		sql.NullString{String: session.UserAgent.String, Valid: session.UserAgent.Valid},
+	)
 	err := row.Scan(
 		&session.ID,
 		&session.UserID,
 		&session.Name,
 		&session.StartedAt,
 		&session.StoppedAt,
+		&session.BrowserID,
+		&session.BrowserType,
+		&session.CdpURL,
+		&session.Headless,
+		&session.ViewportW,
+		&session.ViewportH,
+		&session.UserAgent,
 	)
 	if err != nil {
 		return nil, err
@@ -60,7 +102,9 @@ func (s *service) CreateSession(ctx context.Context, userID uuid.UUID, name stri
 // GetSessionsByUserID retrieves all sessions for a specific user
 func (s *service) GetSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]*Session, error) {
 	q := `
-		SELECT id, user_id, name, started_at, stopped_at
+		SELECT id, user_id, name, started_at, stopped_at, 
+		       browser_id, browser_type, cdp_url, headless, 
+		       viewport_w, viewport_h, user_agent
 		FROM sessions
 		WHERE user_id = $1
 		ORDER BY started_at DESC
@@ -81,6 +125,13 @@ func (s *service) GetSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]
 			&session.Name,
 			&session.StartedAt,
 			&session.StoppedAt,
+			&session.BrowserID,
+			&session.BrowserType,
+			&session.CdpURL,
+			&session.Headless,
+			&session.ViewportW,
+			&session.ViewportH,
+			&session.UserAgent,
 		)
 		if err != nil {
 			return nil, err
@@ -98,7 +149,9 @@ func (s *service) GetSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]
 // GetSessionByID retrieves a specific session
 func (s *service) GetSessionByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*Session, error) {
 	q := `
-		SELECT id, user_id, name, started_at, stopped_at
+		SELECT id, user_id, name, started_at, stopped_at, 
+		       browser_id, browser_type, cdp_url, headless, 
+		       viewport_w, viewport_h, user_agent
 		FROM sessions
 		WHERE id = $1 AND user_id = $2
 	`
@@ -111,6 +164,13 @@ func (s *service) GetSessionByID(ctx context.Context, id uuid.UUID, userID uuid.
 		&session.Name,
 		&session.StartedAt,
 		&session.StoppedAt,
+		&session.BrowserID,
+		&session.BrowserType,
+		&session.CdpURL,
+		&session.Headless,
+		&session.ViewportW,
+		&session.ViewportH,
+		&session.UserAgent,
 	)
 
 	if err != nil {
@@ -129,7 +189,9 @@ func (s *service) StopSession(ctx context.Context, id uuid.UUID, userID uuid.UUI
 		UPDATE sessions
 		SET stopped_at = NOW()
 		WHERE id = $1 AND user_id = $2 AND stopped_at IS NULL
-		RETURNING id, user_id, name, started_at, stopped_at
+		RETURNING id, user_id, name, started_at, stopped_at, 
+		          browser_id, browser_type, cdp_url, headless, 
+		          viewport_w, viewport_h, user_agent
 	`
 
 	session := &Session{}
@@ -140,6 +202,13 @@ func (s *service) StopSession(ctx context.Context, id uuid.UUID, userID uuid.UUI
 		&session.Name,
 		&session.StartedAt,
 		&session.StoppedAt,
+		&session.BrowserID,
+		&session.BrowserType,
+		&session.CdpURL,
+		&session.Headless,
+		&session.ViewportW,
+		&session.ViewportH,
+		&session.UserAgent,
 	)
 
 	if err != nil {
@@ -179,11 +248,17 @@ func (s *service) DeleteSession(ctx context.Context, id uuid.UUID, userID uuid.U
 // ToView converts a Session to a SessionView
 func (s *Session) ToView() *SessionView {
 	view := &SessionView{
-		ID:        s.ID.String(),
-		UserID:    s.UserID.String(),
-		Name:      s.Name,
-		StartedAt: s.StartedAt,
-		Active:    !s.StoppedAt.Valid,
+		ID:          s.ID.String(),
+		UserID:      s.UserID.String(),
+		Name:        s.Name,
+		StartedAt:   s.StartedAt,
+		Active:      !s.StoppedAt.Valid,
+		BrowserID:   s.BrowserID,
+		BrowserType: s.BrowserType,
+		CdpURL:      s.CdpURL,
+		Headless:    s.Headless,
+		ViewportW:   s.ViewportW,
+		ViewportH:   s.ViewportH,
 	}
 
 	if s.StoppedAt.Valid {
@@ -194,6 +269,12 @@ func (s *Session) ToView() *SessionView {
 		duration := stoppedAt.Sub(s.StartedAt)
 		durationStr := formatDuration(duration)
 		view.Duration = &durationStr
+	}
+	
+	// Set user agent if valid
+	if s.UserAgent.Valid {
+		userAgent := s.UserAgent.String
+		view.UserAgent = &userAgent
 	}
 
 	return view

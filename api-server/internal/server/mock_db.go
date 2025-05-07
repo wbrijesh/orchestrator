@@ -13,7 +13,7 @@ type MockDB struct {
 	GetUserByEmailFunc    func(ctx context.Context, email string) (*database.User, error)
 	HealthFunc            func() map[string]string
 	CloseFunc             func() error
-	CreateSessionFunc     func(ctx context.Context, userID uuid.UUID, name string) (*database.Session, error)
+	CreateSessionFunc     func(ctx context.Context, userID uuid.UUID, name string, browserID, browserType, cdpURL string, headless bool, viewportW, viewportH int, userAgent *string) (*database.Session, error)
 	GetSessionsByUserIDFunc func(ctx context.Context, userID uuid.UUID) ([]*database.Session, error)
 	GetSessionByIDFunc    func(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*database.Session, error)
 	StopSessionFunc       func(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*database.Session, error)
@@ -51,9 +51,9 @@ func (m *MockDB) Close() error {
 }
 
 // Session methods
-func (m *MockDB) CreateSession(ctx context.Context, userID uuid.UUID, name string) (*database.Session, error) {
+func (m *MockDB) CreateSession(ctx context.Context, userID uuid.UUID, name string, browserID, browserType, cdpURL string, headless bool, viewportW, viewportH int, userAgent *string) (*database.Session, error) {
 	if m.CreateSessionFunc != nil {
-		return m.CreateSessionFunc(ctx, userID, name)
+		return m.CreateSessionFunc(ctx, userID, name, browserID, browserType, cdpURL, headless, viewportW, viewportH, userAgent)
 	}
 	return &database.Session{}, nil
 }

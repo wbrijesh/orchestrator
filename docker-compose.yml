@@ -1,0 +1,74 @@
+version: "3.8"
+services:
+  api:
+    build:
+      context: ./api-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+
+      DB_HOST: db
+
+      DB_DATABASE: ${DB_DATABASE:-orchestrator}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      GOPATH: /go
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - orchestrator-net
+
+  browser:
+    build:
+      context: ./browser-server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+    networks:
+      - orchestrator-net
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+    networks:
+      - orchestrator-net
+
+  db:
+    image: postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-orchestrator}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_DATABASE:-orchestrator}"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - orchestrator-net
+
+networks:
+  orchestrator-net:
+
+volumes:
+  db_data:

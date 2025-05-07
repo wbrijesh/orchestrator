@@ -1,12 +1,15 @@
 package server
 
 import (
+	"api-server/internal/browser"
 	"api-server/internal/database"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -58,6 +61,45 @@ type SessionsResponse struct {
 	Sessions []*database.SessionView `json:"sessions"`
 }
 
+// Default browser settings from environment or hardcoded defaults
+var (
+	defaultBrowserType = getEnvOrDefault("DEFAULT_BROWSER_TYPE", "firefox")
+	defaultHeadless    = getEnvBoolOrDefault("DEFAULT_BROWSER_HEADLESS", false)
+	defaultViewportW   = getEnvIntOrDefault("DEFAULT_BROWSER_VIEWPORT_WIDTH", 1280)
+	defaultViewportH   = getEnvIntOrDefault("DEFAULT_BROWSER_VIEWPORT_HEIGHT", 720)
+	defaultTimeout     = getEnvIntOrDefault("DEFAULT_BROWSER_TIMEOUT", 3600) // Default 1 hour
+)
+
+// Helper functions to get environment variables with defaults
+func getEnvOrDefault(key, defaultVal string) string {
+	if val, exists := os.LookupEnv(key); exists {
+		return val
+	}
+	return defaultVal
+}
+
+func getEnvBoolOrDefault(key string, defaultVal bool) bool {
+	if val, exists := os.LookupEnv(key); exists {
+		return val == "true" || val == "1" || val == "yes"
+	}
+	return defaultVal
+}
+
+func getEnvIntOrDefault(key string, defaultVal int) int {
+	if val, exists := os.LookupEnv(key); exists {
+		if intVal, err := parseInt(val); err == nil {
+			return intVal
+		}
+	}
+	return defaultVal
+}
+
+func parseInt(s string) (int, error) {
+	var i int
+	_, err := fmt.Sscanf(s, "%d", &i)
+	return i, err
+}
+
 // CreateSessionHandler creates a new session for the authenticated user
 func (s *Server) CreateSessionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -72,10 +114,78 @@ func (s *Server) CreateSessionHandler(w http.ResponseWriter, r *http.Request) {
 	// Generate a random session name
 	sessionName := RandomSessionName()
 
-	// Create session in database
-	ctx := context.Background()
-	session, err := s.db.CreateSession(ctx, userID, sessionName)
+	// Create browser client
+	browserClient := browser.NewClient()
+
+	// Create browser session request
+	browserReq := browser.CreateSessionRequest{
+		BrowserType: defaultBrowserType,
+		Headless:    defaultHeadless,
+		ViewportSize: &browser.ViewportSize{
+			Width:  defaultViewportW,
+			Height: defaultViewportH,
+		},
+		Timeout: &defaultTimeout,
+	}
+
+	// Create browser session
+	ctx := r.Context()
+	browserSession, err := browserClient.CreateSession(ctx, browserReq)
 	if err != nil {
+		log.Printf("Failed to create browser session: %v", err)
+		
+		// Check if we should use a fallback mock session
+		if os.Getenv("BROWSER_SERVER_FALLBACK") == "true" {
+			log.Printf("Using fallback mock session")
+			// Create a mock browser session for fallback
+			now := time.Now()
+			expireTime := now.Add(time.Duration(defaultTimeout) * time.Second)
+			browserSession = &browser.SessionResponse{
+				ID:          "mock-" + uuid.New().String(),
+				BrowserType: browserReq.BrowserType,
+				Headless:    browserReq.Headless,
+				CreatedAt:   browser.FlexibleTime(now),
+				ExpiresAt:   browser.FlexibleTime(expireTime),
+				CdpURL:      "mock://browser-session/not-available",
+				ViewportSize: browser.ViewportSize{
+					Width:  browserReq.ViewportSize.Width,
+					Height: browserReq.ViewportSize.Height,
+				},
+				UserAgent: browserReq.UserAgent,
+			}
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(database.APIResponse{
+				Error: "Could not create browser session",
+				Data:  nil,
+			})
+			return
+		}
+	}
+
+	// Create database session using browser session details
+	var userAgentPtr *string = nil
+	if browserSession.UserAgent != nil {
+		userAgentPtr = browserSession.UserAgent
+	}
+
+	dbSession, err := s.db.CreateSession(
+		ctx, 
+		userID, 
+		sessionName,
+		browserSession.ID, 
+		browserSession.BrowserType, 
+		browserSession.CdpURL,
+		browserSession.Headless,
+		browserSession.ViewportSize.Width,
+		browserSession.ViewportSize.Height,
+		userAgentPtr,
+	)
+	if err != nil {
+		// Try to cleanup the browser session
+		_ = browserClient.DeleteSession(ctx, browserSession.ID)
+
+		log.Printf("Failed to record session in database: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(database.APIResponse{
 			Error: "Could not create session",
@@ -88,7 +198,7 @@ func (s *Server) CreateSessionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(database.APIResponse{
 		Error: "",
 		Data: CreateSessionResponse{
-			Session: session.ToView(),
+			Session: dbSession.ToView(),
 		},
 	})
 }
@@ -164,9 +274,29 @@ func (s *Server) StopSessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get session first to get browser ID
+	ctx := r.Context()
+	session, err := s.db.GetSessionByID(ctx, sessionID, userID)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(database.APIResponse{
+			Error: err.Error(),
+			Data:  nil,
+		})
+		return
+	}
+
+	// Stop session in browser server if it's active
+	if !session.StoppedAt.Valid && session.BrowserID != "" {
+		browserClient := browser.NewClient()
+		if err := browserClient.DeleteSession(ctx, session.BrowserID); err != nil {
+			// Log but continue - we still want to mark the session as stopped
+			log.Printf("Failed to stop browser session %s: %v", session.BrowserID, err)
+		}
+	}
+
 	// Stop session in database
-	ctx := context.Background()
-	session, err := s.db.StopSession(ctx, sessionID, userID)
+	stoppedSession, err := s.db.StopSession(ctx, sessionID, userID)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(database.APIResponse{
@@ -180,7 +310,7 @@ func (s *Server) StopSessionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(database.APIResponse{
 		Error: "",
 		Data: CreateSessionResponse{
-			Session: session.ToView(),
+			Session: stoppedSession.ToView(),
 		},
 	})
 }
@@ -218,8 +348,28 @@ func (s *Server) DeleteSessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get session first to get browser ID
+	ctx := r.Context()
+	session, err := s.db.GetSessionByID(ctx, sessionID, userID)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(database.APIResponse{
+			Error: err.Error(),
+			Data:  nil,
+		})
+		return
+	}
+
+	// Delete session in browser server if it exists
+	if session.BrowserID != "" {
+		browserClient := browser.NewClient()
+		if err := browserClient.DeleteSession(ctx, session.BrowserID); err != nil {
+			// Log but continue - we still want to delete the database record
+			log.Printf("Failed to delete browser session %s: %v", session.BrowserID, err)
+		}
+	}
+
 	// Delete session from database
-	ctx := context.Background()
 	err = s.db.DeleteSession(ctx, sessionID, userID)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)

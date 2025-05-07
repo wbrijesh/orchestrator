@@ -1,0 +1,19 @@
+
+
+services:
+  # API Service (Production)
+  api:
+    build:
+      target: prod  # Use the production stage from Dockerfile
+    environment:
+      APP_ENV: prod
+    restart: always
+
+  # Browser Service (Production)
+  browser:
+    environment:
+      DEBUG: "false"
+    restart: always
+
+  # Note: Client service is excluded in production
+  # as it would typically be served by a CDN or static hosting

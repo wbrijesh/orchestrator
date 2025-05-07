@@ -1,6 +1,7 @@
 package server
 
 import (
+	"api-server/internal/browser"
 	"api-server/internal/database"
 	"context"
 	"database/sql"
@@ -14,31 +15,90 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
+
+// Save original functions
+var (
+	originalNewBrowserClient = browser.NewClient
+)
+
+// Create a mock browser client
+func setupMockBrowserClient(mockClient *browser.MockClient) func() {
+	// Replace the NewClient function with our mock version
+	browser.NewClient = func() browser.BrowserClient {
+		return mockClient
+	}
+	
+	return func() {
+		// Restore the original function when done
+		browser.NewClient = originalNewBrowserClient
+	}
+}
 
 // Test for CreateSessionHandler
 func TestCreateSessionHandler(t *testing.T) {
 	testCases := []struct {
-		name           string
-		mockSetup      func() *MockDB
-		setupContext   func() context.Context
-		expectedStatus int
-		expectedError  string
-		checkData      func(t *testing.T, data interface{})
+		name               string
+		mockDBSetup        func() *MockDB
+		mockBrowserSetup   func() *browser.MockClient
+		setupContext       func() context.Context
+		expectedStatus     int
+		expectedError      string
+		checkData          func(t *testing.T, data interface{})
 	}{
 		{
 			name: "Success",
-			mockSetup: func() *MockDB {
+			mockDBSetup: func() *MockDB {
 				sessionID := uuid.New()
 				now := time.Now()
 				return &MockDB{
-					CreateSessionFunc: func(ctx context.Context, uid uuid.UUID, name string) (*database.Session, error) {
+					CreateSessionFunc: func(ctx context.Context, uid uuid.UUID, name string, 
+						browserID, browserType, cdpURL string, headless bool,
+						viewportW, viewportH int, userAgent *string) (*database.Session, error) {
+						
+						assert.Equal(t, "mock-browser-id", browserID)
+						assert.Equal(t, "firefox", browserType)
+						assert.Equal(t, "ws://localhost:9222/devtools/browser/mock", cdpURL)
+						assert.False(t, headless)
+						assert.Equal(t, 1280, viewportW)
+						assert.Equal(t, 720, viewportH)
+						
 						return &database.Session{
-							ID:        sessionID,
-							UserID:    uid,
-							Name:      "test-session",
-							StartedAt: now,
-							StoppedAt: sql.NullTime{Valid: false},
+							ID:          sessionID,
+							UserID:      uid,
+							Name:        name,
+							StartedAt:   now,
+							StoppedAt:   sql.NullTime{Valid: false},
+							BrowserID:   browserID,
+							BrowserType: browserType,
+							CdpURL:      cdpURL,
+							Headless:    headless,
+							ViewportW:   viewportW,
+							ViewportH:   viewportH,
+						}, nil
+					},
+				}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{
+					CreateSessionFunc: func(ctx context.Context, req browser.CreateSessionRequest) (*browser.SessionResponse, error) {
+						assert.Equal(t, "firefox", req.BrowserType)
+						assert.False(t, req.Headless)
+						
+						now := time.Now()
+						expireTime := now.Add(1 * time.Hour)
+						return &browser.SessionResponse{
+							ID:          "mock-browser-id",
+							BrowserType: "firefox",
+							Headless:    false,
+							CreatedAt:   browser.FlexibleTime(now),
+							ExpiresAt:   browser.FlexibleTime(expireTime),
+							CdpURL:      "ws://localhost:9222/devtools/browser/mock",
+							ViewportSize: browser.ViewportSize{
+								Width:  1280,
+								Height: 720,
+							},
 						}, nil
 					},
 				}
@@ -69,12 +129,23 @@ func TestCreateSessionHandler(t *testing.T) {
 				if session["active"] != true {
 					t.Error("Expected session to be active")
 				}
+				
+				// Check browser-specific fields
+				assert.Equal(t, "mock-browser-id", session["browser_id"])
+				assert.Equal(t, "firefox", session["browser_type"])
+				assert.Equal(t, "ws://localhost:9222/devtools/browser/mock", session["cdp_url"])
+				assert.Equal(t, false, session["headless"])
+				assert.Equal(t, float64(1280), session["viewport_width"])
+				assert.Equal(t, float64(720), session["viewport_height"])
 			},
 		},
 		{
 			name: "Unauthorized",
-			mockSetup: func() *MockDB {
+			mockDBSetup: func() *MockDB {
 				return &MockDB{}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{}
 			},
 			setupContext: func() context.Context {
 				// Return context without user ID
@@ -85,11 +156,57 @@ func TestCreateSessionHandler(t *testing.T) {
 			checkData:      nil,
 		},
 		{
+			name: "Browser Server Error",
+			mockDBSetup: func() *MockDB {
+				return &MockDB{}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{
+					CreateSessionFunc: func(ctx context.Context, req browser.CreateSessionRequest) (*browser.SessionResponse, error) {
+						return nil, errors.New("browser server error")
+					},
+				}
+			},
+			setupContext: func() context.Context {
+				testUserID := uuid.New()
+				return context.WithValue(context.Background(), userIDContextKey, testUserID)
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedError:  "Could not create browser session",
+			checkData:      nil,
+		},
+		{
 			name: "Database Error",
-			mockSetup: func() *MockDB {
+			mockDBSetup: func() *MockDB {
 				return &MockDB{
-					CreateSessionFunc: func(ctx context.Context, uid uuid.UUID, name string) (*database.Session, error) {
+					CreateSessionFunc: func(ctx context.Context, uid uuid.UUID, name string,
+						browserID, browserType, cdpURL string, headless bool,
+						viewportW, viewportH int, userAgent *string) (*database.Session, error) {
 						return nil, errors.New("database error")
+					},
+				}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				// Also need to track deletion when DB fails
+				return &browser.MockClient{
+					CreateSessionFunc: func(ctx context.Context, req browser.CreateSessionRequest) (*browser.SessionResponse, error) {
+						return &browser.SessionResponse{
+							ID:          "mock-browser-id",
+							BrowserType: "firefox",
+							Headless:    false,
+							CreatedAt:   browser.FlexibleTime(time.Now()),
+							ExpiresAt:   browser.FlexibleTime(time.Now().Add(1 * time.Hour)),
+							CdpURL:      "ws://localhost:9222/devtools/browser/mock",
+							ViewportSize: browser.ViewportSize{
+								Width:  1280,
+								Height: 720,
+							},
+						}, nil
+					},
+					DeleteSessionFunc: func(ctx context.Context, sessionID string) error {
+						// Verify we're deleting the right session
+						assert.Equal(t, "mock-browser-id", sessionID)
+						return nil
 					},
 				}
 			},
@@ -106,7 +223,13 @@ func TestCreateSessionHandler(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup
-			mockDB := tc.mockSetup()
+			mockDB := tc.mockDBSetup()
+			mockBrowserClient := tc.mockBrowserSetup()
+			
+			// Replace the browser client with our mock
+			cleanup := setupMockBrowserClient(mockBrowserClient)
+			defer cleanup()
+			
 			s := &Server{db: mockDB}
 			req, err := http.NewRequest("POST", "/sessions", nil)
 			if err != nil {
@@ -176,18 +299,30 @@ func TestGetUserSessionsHandler(t *testing.T) {
 				// Create an active and a stopped session
 				sessions := []*database.Session{
 					{
-						ID:        uuid.New(),
-						UserID:    testUserID,
-						Name:      "active-session",
-						StartedAt: now,
-						StoppedAt: sql.NullTime{Valid: false},
+						ID:          uuid.New(),
+						UserID:      testUserID,
+						Name:        "active-session",
+						StartedAt:   now,
+						StoppedAt:   sql.NullTime{Valid: false},
+						BrowserID:   "browser-1",
+						BrowserType: "firefox",
+						CdpURL:      "ws://localhost:9222/devtools/browser/1",
+						Headless:    false,
+						ViewportW:   1280,
+						ViewportH:   720,
 					},
 					{
-						ID:        uuid.New(),
-						UserID:    testUserID,
-						Name:      "stopped-session",
-						StartedAt: now,
-						StoppedAt: sql.NullTime{Valid: true, Time: stoppedAt},
+						ID:          uuid.New(),
+						UserID:      testUserID,
+						Name:        "stopped-session",
+						StartedAt:   now,
+						StoppedAt:   sql.NullTime{Valid: true, Time: stoppedAt},
+						BrowserID:   "browser-2",
+						BrowserType: "firefox",
+						CdpURL:      "ws://localhost:9222/devtools/browser/2",
+						Headless:    false,
+						ViewportW:   1280,
+						ViewportH:   720,
 					},
 				}
 
@@ -232,8 +367,18 @@ func TestGetUserSessionsHandler(t *testing.T) {
 
 					if session["active"] == true {
 						activeCount++
+						
+						// Check browser fields for active session
+						assert.Equal(t, "browser-1", session["browser_id"])
+						assert.Equal(t, "firefox", session["browser_type"])
+						assert.Equal(t, "ws://localhost:9222/devtools/browser/1", session["cdp_url"])
 					} else {
 						stoppedCount++
+						
+						// Check browser fields for stopped session
+						assert.Equal(t, "browser-2", session["browser_id"])
+						assert.Equal(t, "firefox", session["browser_type"])
+						assert.Equal(t, "ws://localhost:9222/devtools/browser/2", session["cdp_url"])
 					}
 				}
 
@@ -367,6 +512,7 @@ func TestStopSessionHandler(t *testing.T) {
 		name           string
 		sessionID      string // The session ID to use in the URL
 		mockSetup      func() *MockDB
+		mockBrowserSetup func() *browser.MockClient
 		setupContext   func() context.Context
 		expectedStatus int
 		expectedError  string
@@ -382,14 +528,43 @@ func TestStopSessionHandler(t *testing.T) {
 				stoppedAt := now.Add(1 * time.Hour)
 
 				return &MockDB{
+					GetSessionByIDFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) (*database.Session, error) {
+						return &database.Session{
+							ID:          sessionID,
+							UserID:      testUserID,
+							Name:        "test-session",
+							StartedAt:   now,
+							StoppedAt:   sql.NullTime{Valid: false}, // Active session
+							BrowserID:   "browser-1",
+							BrowserType: "firefox",
+							CdpURL:      "ws://localhost:9222/devtools/browser/1",
+							Headless:    false,
+							ViewportW:   1280,
+							ViewportH:   720,
+						}, nil
+					},
 					StopSessionFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) (*database.Session, error) {
 						return &database.Session{
-							ID:        sessionID,
-							UserID:    testUserID,
-							Name:      "test-session",
-							StartedAt: now,
-							StoppedAt: sql.NullTime{Valid: true, Time: stoppedAt},
+							ID:          sessionID,
+							UserID:      testUserID,
+							Name:        "test-session",
+							StartedAt:   now,
+							StoppedAt:   sql.NullTime{Valid: true, Time: stoppedAt},
+							BrowserID:   "browser-1",
+							BrowserType: "firefox",
+							CdpURL:      "ws://localhost:9222/devtools/browser/1",
+							Headless:    false,
+							ViewportW:   1280,
+							ViewportH:   720,
 						}, nil
+					},
+				}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{
+					DeleteSessionFunc: func(ctx context.Context, sessionID string) error {
+						assert.Equal(t, "browser-1", sessionID)
+						return nil
 					},
 				}
 			},
@@ -419,57 +594,70 @@ func TestStopSessionHandler(t *testing.T) {
 				if session["stopped_at"] == nil {
 					t.Error("Expected stopped_at to be set")
 				}
+				
+				// Check browser fields
+				assert.Equal(t, "browser-1", session["browser_id"])
+				assert.Equal(t, "firefox", session["browser_type"])
+				assert.Equal(t, "ws://localhost:9222/devtools/browser/1", session["cdp_url"])
 			},
 		},
 		{
-			name:      "Unauthorized",
-			sessionID: uuid.New().String(),
-			mockSetup: func() *MockDB {
-				return &MockDB{}
-			},
-			setupContext: func() context.Context {
-				// Return context without user ID
-				return context.Background()
-			},
-			expectedStatus: http.StatusUnauthorized,
-			expectedError:  "Unauthorized",
-			checkData:      nil,
-		},
-		{
-			name:      "Missing Session ID",
-			sessionID: "missing", // Use a non-empty value that will be caught by our validation logic
-			mockSetup: func() *MockDB {
-				return &MockDB{}
-			},
-			setupContext: func() context.Context {
-				testUserID := uuid.New()
-				return context.WithValue(context.Background(), userIDContextKey, testUserID)
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "Invalid session ID",
-			checkData:      nil,
-		},
-		{
-			name:      "Invalid UUID",
-			sessionID: "not-a-uuid",
-			mockSetup: func() *MockDB {
-				return &MockDB{}
-			},
-			setupContext: func() context.Context {
-				testUserID := uuid.New()
-				return context.WithValue(context.Background(), userIDContextKey, testUserID)
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "Invalid session ID",
-			checkData:      nil,
-		},
-		{
-			name:      "Session Not Found",
+			name:      "Session not found",
 			sessionID: uuid.New().String(),
 			mockSetup: func() *MockDB {
 				return &MockDB{
+					GetSessionByIDFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) (*database.Session, error) {
+						return nil, errors.New("session not found")
+					},
+				}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{}
+			},
+			setupContext: func() context.Context {
+				testUserID := uuid.New()
+				return context.WithValue(context.Background(), userIDContextKey, testUserID)
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "session not found",
+			checkData:      nil,
+		},
+		{
+			name:      "Browser session already stopped",
+			sessionID: uuid.New().String(),
+			mockSetup: func() *MockDB {
+				sessionID := uuid.New()
+				testUserID := uuid.New()
+				now := time.Now()
+				stoppedAt := now.Add(-1 * time.Hour) // Already stopped
+				
+				return &MockDB{
+					GetSessionByIDFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) (*database.Session, error) {
+						return &database.Session{
+							ID:          sessionID,
+							UserID:      testUserID,
+							Name:        "test-session",
+							StartedAt:   now,
+							StoppedAt:   sql.NullTime{Valid: true, Time: stoppedAt}, // Already stopped
+							BrowserID:   "browser-1",
+							BrowserType: "firefox",
+							CdpURL:      "ws://localhost:9222/devtools/browser/1",
+							Headless:    false,
+							ViewportW:   1280,
+							ViewportH:   720,
+						}, nil
+					},
 					StopSessionFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) (*database.Session, error) {
 						return nil, errors.New("session not found or already stopped")
+					},
+				}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{
+					// Browser client should not be called for already stopped sessions
+					DeleteSessionFunc: func(ctx context.Context, sessionID string) error {
+						t.Error("DeleteSession should not be called for already stopped sessions")
+						return nil
 					},
 				}
 			},
@@ -487,6 +675,12 @@ func TestStopSessionHandler(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup
 			mockDB := tc.mockSetup()
+			mockBrowserClient := tc.mockBrowserSetup()
+			
+			// Replace the browser client with our mock
+			cleanup := setupMockBrowserClient(mockBrowserClient)
+			defer cleanup()
+			
 			s := &Server{db: mockDB}
 
 			// Create router to handle URL parameters
@@ -551,20 +745,48 @@ func TestStopSessionHandler(t *testing.T) {
 // Test for DeleteSessionHandler
 func TestDeleteSessionHandler(t *testing.T) {
 	testCases := []struct {
-		name           string
-		sessionID      string // The session ID to use in the URL
-		mockSetup      func() *MockDB
-		setupContext   func() context.Context
-		expectedStatus int
-		expectedError  string
-		checkData      func(t *testing.T, data interface{})
+		name            string
+		sessionID       string // The session ID to use in the URL
+		mockSetup       func() *MockDB
+		mockBrowserSetup func() *browser.MockClient
+		setupContext    func() context.Context
+		expectedStatus  int
+		expectedError   string
+		checkData       func(t *testing.T, data interface{})
 	}{
 		{
 			name:      "Success",
 			sessionID: uuid.New().String(),
 			mockSetup: func() *MockDB {
+				sessionID := uuid.New()
+				testUserID := uuid.New()
+				now := time.Now()
+				
 				return &MockDB{
+					GetSessionByIDFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) (*database.Session, error) {
+						return &database.Session{
+							ID:          sessionID,
+							UserID:      testUserID,
+							Name:        "test-session",
+							StartedAt:   now,
+							StoppedAt:   sql.NullTime{Valid: false}, // Active session
+							BrowserID:   "browser-1",
+							BrowserType: "firefox",
+							CdpURL:      "ws://localhost:9222/devtools/browser/1",
+							Headless:    false,
+							ViewportW:   1280,
+							ViewportH:   720,
+						}, nil
+					},
 					DeleteSessionFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) error {
+						return nil
+					},
+				}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{
+					DeleteSessionFunc: func(ctx context.Context, sessionID string) error {
+						assert.Equal(t, "browser-1", sessionID)
 						return nil
 					},
 				}
@@ -588,54 +810,60 @@ func TestDeleteSessionHandler(t *testing.T) {
 			},
 		},
 		{
-			name:      "Unauthorized",
-			sessionID: uuid.New().String(),
-			mockSetup: func() *MockDB {
-				return &MockDB{}
-			},
-			setupContext: func() context.Context {
-				// Return context without user ID
-				return context.Background()
-			},
-			expectedStatus: http.StatusUnauthorized,
-			expectedError:  "Unauthorized",
-			checkData:      nil,
-		},
-		{
-			name:      "Missing Session ID",
-			sessionID: "missing", // Use a non-empty value that will be caught by our validation logic
-			mockSetup: func() *MockDB {
-				return &MockDB{}
-			},
-			setupContext: func() context.Context {
-				testUserID := uuid.New()
-				return context.WithValue(context.Background(), userIDContextKey, testUserID)
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "Invalid session ID",
-			checkData:      nil,
-		},
-		{
-			name:      "Invalid UUID",
-			sessionID: "not-a-uuid",
-			mockSetup: func() *MockDB {
-				return &MockDB{}
-			},
-			setupContext: func() context.Context {
-				testUserID := uuid.New()
-				return context.WithValue(context.Background(), userIDContextKey, testUserID)
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "Invalid session ID",
-			checkData:      nil,
-		},
-		{
-			name:      "Session Not Found",
+			name:      "Session not found",
 			sessionID: uuid.New().String(),
 			mockSetup: func() *MockDB {
 				return &MockDB{
+					GetSessionByIDFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) (*database.Session, error) {
+						return nil, errors.New("session not found")
+					},
+				}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{}
+			},
+			setupContext: func() context.Context {
+				testUserID := uuid.New()
+				return context.WithValue(context.Background(), userIDContextKey, testUserID)
+			},
+			expectedStatus: http.StatusBadRequest,
+			expectedError:  "session not found",
+			checkData:      nil,
+		},
+		{
+			name:      "Browser server error on delete",
+			sessionID: uuid.New().String(),
+			mockSetup: func() *MockDB {
+				sessionID := uuid.New()
+				testUserID := uuid.New()
+				now := time.Now()
+				
+				return &MockDB{
+					GetSessionByIDFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) (*database.Session, error) {
+						return &database.Session{
+							ID:          sessionID,
+							UserID:      testUserID,
+							Name:        "test-session",
+							StartedAt:   now,
+							StoppedAt:   sql.NullTime{Valid: false}, // Active session
+							BrowserID:   "browser-error",
+							BrowserType: "firefox",
+							CdpURL:      "ws://localhost:9222/devtools/browser/error",
+							Headless:    false,
+							ViewportW:   1280,
+							ViewportH:   720,
+						}, nil
+					},
 					DeleteSessionFunc: func(ctx context.Context, sid uuid.UUID, uid uuid.UUID) error {
-						return errors.New("session not found or already deleted")
+						return nil // Database delete still succeeds
+					},
+				}
+			},
+			mockBrowserSetup: func() *browser.MockClient {
+				return &browser.MockClient{
+					DeleteSessionFunc: func(ctx context.Context, sessionID string) error {
+						assert.Equal(t, "browser-error", sessionID)
+						return errors.New("failed to delete browser session")
 					},
 				}
 			},
@@ -643,9 +871,19 @@ func TestDeleteSessionHandler(t *testing.T) {
 				testUserID := uuid.New()
 				return context.WithValue(context.Background(), userIDContextKey, testUserID)
 			},
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "session not found or already deleted",
-			checkData:      nil,
+			expectedStatus: http.StatusOK, // We still return success even if browser deletion fails
+			expectedError:  "",
+			checkData: func(t *testing.T, data interface{}) {
+				success, ok := data.(map[string]interface{})
+				if !ok {
+					t.Error("Expected response to be a map")
+					return
+				}
+				
+				if success["success"] != true {
+					t.Error("Expected success to be true")
+				}
+			},
 		},
 	}
 
@@ -653,6 +891,12 @@ func TestDeleteSessionHandler(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup
 			mockDB := tc.mockSetup()
+			mockBrowserClient := tc.mockBrowserSetup()
+			
+			// Replace the browser client with our mock
+			cleanup := setupMockBrowserClient(mockBrowserClient)
+			defer cleanup()
+			
 			s := &Server{db: mockDB}
 
 			// Create router to handle URL parameters

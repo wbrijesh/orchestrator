@@ -1,0 +1,9 @@
+-- Add browser-specific columns to the sessions table
+ALTER TABLE sessions
+ADD COLUMN browser_id VARCHAR(255) DEFAULT '' NOT NULL,
+ADD COLUMN browser_type VARCHAR(50) DEFAULT 'firefox' NOT NULL,
+ADD COLUMN cdp_url TEXT DEFAULT '' NOT NULL,
+ADD COLUMN headless BOOLEAN DEFAULT false NOT NULL,
+ADD COLUMN viewport_w INTEGER DEFAULT 1280 NOT NULL,
+ADD COLUMN viewport_h INTEGER DEFAULT 720 NOT NULL,
+ADD COLUMN user_agent TEXT DEFAULT NULL;

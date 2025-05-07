@@ -123,30 +123,65 @@ func TestMockDB(t *testing.T) {
 		// Test with function provided
 		expectedUserID := uuid.New()
 		expectedName := "test session"
+		expectedBrowserID := "browser-123"
+		expectedBrowserType := "firefox"
+		expectedCdpURL := "ws://localhost:1234"
+		expectedHeadless := false
+		expectedViewportW := 1280
+		expectedViewportH := 720
+		expectedUserAgent := "Mozilla/5.0"
+		
 		expectedSession := &database.Session{
-			ID:     uuid.New(),
-			UserID: expectedUserID,
-			Name:   expectedName,
+			ID:          uuid.New(),
+			UserID:      expectedUserID,
+			Name:        expectedName,
+			BrowserID:   expectedBrowserID,
+			BrowserType: expectedBrowserType,
+			CdpURL:      expectedCdpURL,
+			Headless:    expectedHeadless,
+			ViewportW:   expectedViewportW,
+			ViewportH:   expectedViewportH,
+			UserAgent:   sql.NullString{String: expectedUserAgent, Valid: true},
 		}
 		expectedError := errors.New("test error")
 		
 		mockDB := &MockDB{
-			CreateSessionFunc: func(ctx context.Context, userID uuid.UUID, name string) (*database.Session, error) {
+			CreateSessionFunc: func(ctx context.Context, userID uuid.UUID, name string, 
+				browserID, browserType, cdpURL string, headless bool, 
+				viewportW, viewportH int, userAgent *string) (*database.Session, error) {
 				// Verify the parameters passed to the function match what we expect
 				assert.Equal(t, expectedUserID, userID, "Expected matching user ID")
 				assert.Equal(t, expectedName, name, "Expected matching session name")
+				assert.Equal(t, expectedBrowserID, browserID, "Expected matching browser ID")
+				assert.Equal(t, expectedBrowserType, browserType, "Expected matching browser type")
+				assert.Equal(t, expectedCdpURL, cdpURL, "Expected matching CDP URL")
+				assert.Equal(t, expectedHeadless, headless, "Expected matching headless value")
+				assert.Equal(t, expectedViewportW, viewportW, "Expected matching viewport width")
+				assert.Equal(t, expectedViewportH, viewportH, "Expected matching viewport height")
+				assert.Equal(t, &expectedUserAgent, userAgent, "Expected matching user agent")
+				
 				return expectedSession, expectedError
 			},
 		}
 		
 		// Call the method and verify it returns what we expect
-		session, err := mockDB.CreateSession(context.Background(), expectedUserID, expectedName)
+		session, err := mockDB.CreateSession(context.Background(), 
+			expectedUserID, expectedName, 
+			expectedBrowserID, expectedBrowserType, expectedCdpURL, 
+			expectedHeadless, expectedViewportW, expectedViewportH,
+			&expectedUserAgent)
+			
 		assert.Equal(t, expectedSession, session, "Expected session to match")
 		assert.Equal(t, expectedError, err, "Expected error to match")
 		
 		// Test with no function provided
 		mockDB = &MockDB{}
-		session, err = mockDB.CreateSession(context.Background(), expectedUserID, expectedName)
+		session, err = mockDB.CreateSession(context.Background(), 
+			expectedUserID, expectedName,
+			expectedBrowserID, expectedBrowserType, expectedCdpURL, 
+			expectedHeadless, expectedViewportW, expectedViewportH,
+			&expectedUserAgent)
+			
 		assert.Equal(t, &database.Session{}, session, "Expected empty session")
 		assert.Nil(t, err, "Expected nil error")
 	})

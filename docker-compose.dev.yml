@@ -1,0 +1,35 @@
+
+
+services:
+  # API Service (Development)
+  api:
+    build:
+      target: dev  # Use the dev stage from Dockerfile
+    volumes:
+      - ./api-server:/app  # Mount code for hot reloading
+      - /app/tmp  # Keep tmp dir inside container
+    environment:
+      APP_ENV: dev
+
+  # Browser Service (Development)
+  browser:
+    volumes:
+      - ./browser-server:/app  # Mount code for hot reloading
+    environment:
+      DEBUG: "true"
+
+  # Client Service (Development Only)
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      target: dev  # Use the dev stage from Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./client:/app  # Mount code for hot reloading
+      - /app/node_modules  # Don't override node_modules
+    environment:
+      NODE_ENV: development
+    networks:
+      - orchestrator-net

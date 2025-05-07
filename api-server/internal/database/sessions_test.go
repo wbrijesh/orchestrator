@@ -10,6 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// Helper function for creating test browser parameters
+func getTestBrowserParams() (string, string, string, bool, int, int) {
+	return "test-browser-id", "firefox", "ws://localhost:9222/devtools/browser/test", false, 1280, 720
+}
+
 func setupSessionsTable(t *testing.T, s *service) {
 	ctx := context.Background()
 	
@@ -46,14 +51,21 @@ func setupSessionsTable(t *testing.T, s *service) {
 		t.Fatalf("failed to create users table: %v", err)
 	}
 	
-	// Create sessions table
+	// Create sessions table with browser fields
 	_, err = s.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS sessions (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			user_id UUID NOT NULL REFERENCES users(id),
 			name VARCHAR(255) NOT NULL,
 			started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-			stopped_at TIMESTAMP WITH TIME ZONE
+			stopped_at TIMESTAMP WITH TIME ZONE,
+			browser_id VARCHAR(255) DEFAULT '' NOT NULL,
+			browser_type VARCHAR(50) DEFAULT 'firefox' NOT NULL,
+			cdp_url TEXT DEFAULT '' NOT NULL,
+			headless BOOLEAN DEFAULT false NOT NULL,
+			viewport_w INTEGER DEFAULT 1280 NOT NULL,
+			viewport_h INTEGER DEFAULT 720 NOT NULL,
+			user_agent TEXT DEFAULT NULL
 		)
 	`)
 	if err != nil {
@@ -105,8 +117,15 @@ func TestCreateSession(t *testing.T) {
 	// Test creating a session
 	ctx := context.Background()
 	sessionName := "test-session"
+	browserID := "test-browser-id"
+	browserType := "firefox"
+	cdpURL := "ws://localhost:9222/devtools/browser/test"
+	headless := false
+	viewportW := 1280
+	viewportH := 720
 	
-	session, err := s.CreateSession(ctx, userID, sessionName)
+	session, err := s.CreateSession(ctx, userID, sessionName, 
+		browserID, browserType, cdpURL, headless, viewportW, viewportH, nil)
 	if err != nil {
 		t.Fatalf("failed to create session: %v", err)
 	}
@@ -117,10 +136,17 @@ func TestCreateSession(t *testing.T) {
 	assert.Equal(t, sessionName, session.Name, "Expected session name to match")
 	assert.False(t, session.StartedAt.IsZero(), "Expected StartedAt to be set")
 	assert.False(t, session.StoppedAt.Valid, "Expected StoppedAt to be null initially")
+	assert.Equal(t, browserID, session.BrowserID, "Expected browser ID to match")
+	assert.Equal(t, browserType, session.BrowserType, "Expected browser type to match")
+	assert.Equal(t, cdpURL, session.CdpURL, "Expected CDP URL to match")
+	assert.Equal(t, headless, session.Headless, "Expected headless to match")
+	assert.Equal(t, viewportW, session.ViewportW, "Expected viewport width to match")
+	assert.Equal(t, viewportH, session.ViewportH, "Expected viewport height to match")
 	
 	// Test creating a session with invalid user ID
 	invalidID := uuid.New()
-	_, err = s.CreateSession(ctx, invalidID, "invalid-user-session")
+	_, err = s.CreateSession(ctx, invalidID, "invalid-user-session", 
+		browserID, browserType, cdpURL, headless, viewportW, viewportH, nil)
 	assert.Error(t, err, "Expected error when creating session for non-existent user")
 }
 
@@ -147,8 +173,10 @@ func TestGetSessionsByUserID(t *testing.T) {
 	
 	// Create multiple sessions for the user
 	sessions := []string{"session1", "session2", "session3"}
+	browserID, browserType, cdpURL, headless, viewportW, viewportH := getTestBrowserParams()
 	for _, name := range sessions {
-		_, err := s.CreateSession(ctx, userID, name)
+		_, err := s.CreateSession(ctx, userID, name, 
+			browserID+"-"+name, browserType, cdpURL, headless, viewportW, viewportH, nil)
 		if err != nil {
 			t.Fatalf("failed to create test session %s: %v", name, err)
 		}
@@ -193,7 +221,9 @@ func TestGetSessionByID(t *testing.T) {
 	ctx := context.Background()
 	
 	// Create a session
-	session, err := s.CreateSession(ctx, userID, "test-session-byid")
+	browserID, browserType, cdpURL, headless, viewportW, viewportH := getTestBrowserParams()
+	session, err := s.CreateSession(ctx, userID, "test-session-byid", 
+		browserID, browserType, cdpURL, headless, viewportW, viewportH, nil)
 	if err != nil {
 		t.Fatalf("failed to create test session: %v", err)
 	}
@@ -242,7 +272,9 @@ func TestStopSession(t *testing.T) {
 	ctx := context.Background()
 	
 	// Create a session
-	session, err := s.CreateSession(ctx, userID, "test-stop-session")
+	browserID, browserType, cdpURL, headless, viewportW, viewportH := getTestBrowserParams()
+	session, err := s.CreateSession(ctx, userID, "test-stop-session", 
+		browserID, browserType, cdpURL, headless, viewportW, viewportH, nil)
 	if err != nil {
 		t.Fatalf("failed to create test session: %v", err)
 	}
@@ -272,7 +304,9 @@ func TestStopSession(t *testing.T) {
 	
 	// Test with wrong user ID (session exists, but belongs to a different user)
 	// First create a new session
-	newSession, err := s.CreateSession(ctx, userID, "test-wrong-user-stop")
+	browserID, browserType, cdpURL, headless, viewportW, viewportH = getTestBrowserParams()
+	newSession, err := s.CreateSession(ctx, userID, "test-wrong-user-stop", 
+		browserID+"-wrong-user", browserType, cdpURL, headless, viewportW, viewportH, nil)
 	if err != nil {
 		t.Fatalf("failed to create test session: %v", err)
 	}
@@ -306,7 +340,9 @@ func TestDeleteSession(t *testing.T) {
 	ctx := context.Background()
 	
 	// Create a session
-	session, err := s.CreateSession(ctx, userID, "test-delete-session")
+	browserID, browserType, cdpURL, headless, viewportW, viewportH := getTestBrowserParams()
+	session, err := s.CreateSession(ctx, userID, "test-delete-session", 
+		browserID, browserType, cdpURL, headless, viewportW, viewportH, nil)
 	if err != nil {
 		t.Fatalf("failed to create test session: %v", err)
 	}
@@ -328,7 +364,9 @@ func TestDeleteSession(t *testing.T) {
 		"Expected 'session not found or already deleted' error")
 	
 	// Test with wrong user ID (create a new session first)
-	newSession, err := s.CreateSession(ctx, userID, "test-wrong-user-delete")
+	browserID, browserType, cdpURL, headless, viewportW, viewportH = getTestBrowserParams()
+	newSession, err := s.CreateSession(ctx, userID, "test-wrong-user-delete", 
+		browserID+"-delete", browserType, cdpURL, headless, viewportH, viewportW, nil)
 	if err != nil {
 		t.Fatalf("failed to create test session: %v", err)
 	}
