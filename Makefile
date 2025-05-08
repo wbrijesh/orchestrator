@@ -35,7 +35,7 @@ help:
 	@echo "  make APP_ENV=dev up    Start in development mode (default)"
 	@echo "  make APP_ENV=prod up   Start in production mode"
 
-up:
+up: build
 	@echo ">>> Starting services in $(APP_ENV) mode..."
 	@$(COMPOSE) $(COMPOSE_FILES) up -d
 

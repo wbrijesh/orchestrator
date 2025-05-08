@@ -129,7 +129,7 @@ export default function Home() {
   // Function to delete a session
   const deleteSession = async (sessionId: string) => {
     if (!user) return;
-    
+
     try {
       setIsLoading(true);
       const response = await fetch(`${API_URL}/sessions/${sessionId}`, {
@@ -141,7 +141,7 @@ export default function Home() {
       });
 
       const data = await response.json();
-      
+
       if (data.error) {
         setError(data.error);
         return;
@@ -277,12 +277,10 @@ export default function Home() {
                       Stop
                     </button>
                   )}
-                  
+
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <button
-                        className="px-3 py-1.5 text-xs bg-neutral-100 text-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5"
-                      >
+                      <button className="px-3 py-1.5 text-xs bg-neutral-100 text-red-600 rounded-md hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5">
                         <TbTrash size={16} />
                         {!session.active && "Delete"}
                       </button>
@@ -291,12 +289,15 @@ export default function Home() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Delete Session</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Are you sure you want to delete this session? This action cannot be undone.
+                          Are you sure you want to delete this session? This
+                          action cannot be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => deleteSession(session.id)}>
+                        <AlertDialogAction
+                          onClick={() => deleteSession(session.id)}
+                        >
                           Delete
                         </AlertDialogAction>
                       </AlertDialogFooter>

@@ -18,7 +18,7 @@ A service that creates and manages browser sessions on demand using Playwright a
 - pip
 
 ### Installation
-
+.
 1. Clone the repository
 2. Install dependencies:
 
@@ -38,7 +38,7 @@ python -m playwright install
 Copy the example environment file and adjust settings as needed:
 
 ```bash
-cp .env.example .env
+cp .env-example .env
 ```
 
 Edit the `.env` file to customize settings.

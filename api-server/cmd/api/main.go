@@ -39,14 +39,14 @@ var waitForSignal = func() context.Context {
 	// Don't call stop() immediately, as it will cancel notification handling
 	// The defer stop() was causing the context to be canceled immediately
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	
+
 	// Store the stop function without calling it
 	// The stop function will be called when the context is canceled by a signal
 	go func() {
 		<-ctx.Done()
 		stop()
 	}()
-	
+
 	return ctx
 }
 
@@ -61,7 +61,7 @@ func gracefulShutdown(apiServer serverInterface, done chan bool, config ServerCo
 	// the request it is currently handling
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), config.ShutdownTimeout)
 	defer cancel()
-	
+
 	if err := apiServer.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server forced to shutdown with error: %v", err)
 	}
@@ -99,7 +99,7 @@ func main() {
 	srv := server.NewServer()
 	config := DefaultServerConfig()
 	signalCtx := waitForSignal()
-	
+
 	// Run server and handle errors
 	if err := runServer(srv, config, signalCtx); err != nil {
 		log.Fatal(err)

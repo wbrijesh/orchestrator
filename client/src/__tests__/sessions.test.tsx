@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import Home from "../app/home/page";
 import { UserProvider, useUser } from "../context/UserContext";
 import { Session } from "@/types/session";
@@ -18,7 +24,7 @@ vi.mock("react-icons/tb", () => ({
   TbTrash: () => <span data-testid="icon-trash">TrashIcon</span>,
   TbUser: () => <span data-testid="icon-user">UserIcon</span>,
   TbLogout: () => <span data-testid="icon-logout">LogoutIcon</span>,
-  TbSettings: () => <span data-testid="icon-settings">SettingsIcon</span>
+  TbSettings: () => <span data-testid="icon-settings">SettingsIcon</span>,
 }));
 
 // Mock the UserContext
@@ -37,24 +43,52 @@ vi.mock("../context/UserContext", () => {
     clearError: vi.fn(),
     getAuthHeader: () => ({ Authorization: "Bearer mock-token" }),
   });
-  
+
   return {
-    UserProvider: ({ children }: { children: React.ReactNode }) => <div data-testid="user-provider-mock">{children}</div>,
+    UserProvider: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="user-provider-mock">{children}</div>
+    ),
     useUser: mockUseUser,
   };
 });
 
 // Mock alert dialog from shadcn/ui
 vi.mock("@/components/ui/alert-dialog", () => ({
-  AlertDialog: ({ children }: { children: React.ReactNode }) => <div data-testid="alert-dialog">{children}</div>,
-  AlertDialogTrigger: ({ children }: { children: React.ReactNode }) => <div data-testid="alert-dialog-trigger">{children}</div>,
-  AlertDialogContent: ({ children }: { children: React.ReactNode }) => <div data-testid="alert-dialog-content">{children}</div>,
-  AlertDialogHeader: ({ children }: { children: React.ReactNode }) => <div data-testid="alert-dialog-header">{children}</div>,
-  AlertDialogTitle: ({ children }: { children: React.ReactNode }) => <div data-testid="alert-dialog-title">{children}</div>,
-  AlertDialogDescription: ({ children }: { children: React.ReactNode }) => <div data-testid="alert-dialog-description">{children}</div>,
-  AlertDialogFooter: ({ children }: { children: React.ReactNode }) => <div data-testid="alert-dialog-footer">{children}</div>,
-  AlertDialogCancel: ({ children }: { children: React.ReactNode }) => <button data-testid="alert-dialog-cancel">{children}</button>,
-  AlertDialogAction: ({ onClick, children }: { onClick?: () => void, children: React.ReactNode }) => <button data-testid="alert-dialog-action" onClick={onClick}>{children}</button>,
+  AlertDialog: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="alert-dialog">{children}</div>
+  ),
+  AlertDialogTrigger: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="alert-dialog-trigger">{children}</div>
+  ),
+  AlertDialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="alert-dialog-content">{children}</div>
+  ),
+  AlertDialogHeader: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="alert-dialog-header">{children}</div>
+  ),
+  AlertDialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="alert-dialog-title">{children}</div>
+  ),
+  AlertDialogDescription: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="alert-dialog-description">{children}</div>
+  ),
+  AlertDialogFooter: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="alert-dialog-footer">{children}</div>
+  ),
+  AlertDialogCancel: ({ children }: { children: React.ReactNode }) => (
+    <button data-testid="alert-dialog-cancel">{children}</button>
+  ),
+  AlertDialogAction: ({
+    onClick,
+    children,
+  }: {
+    onClick?: () => void;
+    children: React.ReactNode;
+  }) => (
+    <button data-testid="alert-dialog-action" onClick={onClick}>
+      {children}
+    </button>
+  ),
 }));
 
 // Mock Navbar component
@@ -115,12 +149,15 @@ describe("Session Management", () => {
     mockRouter.push.mockReset();
 
     // Setup localStorage with user data
-    localStorageMock.setItem("user", JSON.stringify({
-      id: "user1",
-      email: "test@example.com",
-      firstName: "Test",
-      lastName: "User",
-    }));
+    localStorageMock.setItem(
+      "user",
+      JSON.stringify({
+        id: "user1",
+        email: "test@example.com",
+        firstName: "Test",
+        lastName: "User",
+      }),
+    );
     localStorageMock.setItem("token", "mock-token");
 
     // Reset the useUser mock to default values
@@ -145,18 +182,20 @@ describe("Session Management", () => {
       if (url.includes("/sessions") && !url.includes("/stop")) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            error: "",
-            data: { sessions: mockSessions },
-          }),
+          json: () =>
+            Promise.resolve({
+              error: "",
+              data: { sessions: mockSessions },
+            }),
         }) as unknown as Response;
       }
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({
-          error: "",
-          data: { success: true },
-        }),
+        json: () =>
+          Promise.resolve({
+            error: "",
+            data: { success: true },
+          }),
       }) as unknown as Response;
     });
   });
@@ -167,15 +206,17 @@ describe("Session Management", () => {
       const actual = await import("../app/home/page");
       return { ...actual };
     });
-    
+
     // Re-import the Home component
     const { default: ActualHome } = await import("../app/home/page");
-    
+
     render(<ActualHome />);
 
     // Wait for sessions to load
     await waitFor(() => {
-      expect(screen.queryByText(/Loading sessions.../i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Loading sessions.../i),
+      ).not.toBeInTheDocument();
     });
 
     // Verify fetch was called correctly
@@ -186,31 +227,33 @@ describe("Session Management", () => {
         headers: expect.objectContaining({
           Authorization: "Bearer mock-token",
         }),
-      })
+      }),
     );
 
     // Check if sessions are displayed
     expect(screen.getByText("Session 1")).toBeInTheDocument();
     expect(screen.getByText("Session 2")).toBeInTheDocument();
-    
+
     // Check active status
     expect(screen.getByText("Active")).toBeInTheDocument();
     expect(screen.getByText("Completed")).toBeInTheDocument();
-    
+
     // Check duration
     expect(screen.getByText(/Duration: 2 hours/i)).toBeInTheDocument();
   });
 
   it("displays empty state when no sessions exist", async () => {
     // Mock fetch to return empty sessions
-    global.fetch = vi.fn().mockImplementation(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({
-          error: "",
-          data: { sessions: [] },
-        }),
-      }) as unknown as Response
+    global.fetch = vi.fn().mockImplementation(
+      () =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              error: "",
+              data: { sessions: [] },
+            }),
+        }) as unknown as Response,
     );
 
     // Unmock the Home component to test the actual component
@@ -218,35 +261,39 @@ describe("Session Management", () => {
       const actual = await import("../app/home/page");
       return { ...actual };
     });
-    
+
     // Re-import the Home component
     const { default: ActualHome } = await import("../app/home/page");
-    
+
     render(<ActualHome />);
 
     // Wait for sessions to load
     await waitFor(() => {
-      expect(screen.queryByText(/Loading sessions.../i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Loading sessions.../i),
+      ).not.toBeInTheDocument();
     });
 
     // Check for empty state message
     expect(screen.getByText("No sessions found")).toBeInTheDocument();
     expect(
-      screen.getByText(/You haven't created any sessions yet./i)
+      screen.getByText(/You haven't created any sessions yet./i),
     ).toBeInTheDocument();
     expect(screen.getByText("Create Your First Session")).toBeInTheDocument();
   });
 
   it("handles error when fetching sessions", async () => {
     // Mock fetch to return an error
-    global.fetch = vi.fn().mockImplementation(() =>
-      Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({
-          error: "Failed to fetch sessions",
-          data: null,
-        }),
-      }) as unknown as Response
+    global.fetch = vi.fn().mockImplementation(
+      () =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              error: "Failed to fetch sessions",
+              data: null,
+            }),
+        }) as unknown as Response,
     );
 
     // Unmock the Home component to test the actual component
@@ -254,10 +301,10 @@ describe("Session Management", () => {
       const actual = await import("../app/home/page");
       return { ...actual };
     });
-    
+
     // Re-import the Home component
     const { default: ActualHome } = await import("../app/home/page");
-    
+
     render(<ActualHome />);
 
     // Wait for error to display
@@ -271,55 +318,61 @@ describe("Session Management", () => {
     let fetchCount = 0;
     global.fetch = vi.fn().mockImplementation((url, options) => {
       fetchCount++;
-      
+
       // Initial sessions fetch
       if (fetchCount === 1) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            error: "",
-            data: { sessions: mockSessions },
-          }),
+          json: () =>
+            Promise.resolve({
+              error: "",
+              data: { sessions: mockSessions },
+            }),
         }) as unknown as Response;
       }
       // Session creation
       else if (fetchCount === 2 && options?.method === "POST") {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            error: "",
-            data: {
-              session: {
-                id: "3",
-                user_id: "user1",
-                name: "Session 3",
-                started_at: "2025-05-04T10:00:00Z",
-                stopped_at: null,
-                active: true,
-                duration: null,
+          json: () =>
+            Promise.resolve({
+              error: "",
+              data: {
+                session: {
+                  id: "3",
+                  user_id: "user1",
+                  name: "Session 3",
+                  started_at: "2025-05-04T10:00:00Z",
+                  stopped_at: null,
+                  active: true,
+                  duration: null,
+                },
               },
-            },
-          }),
+            }),
         }) as unknown as Response;
       }
       // Sessions refresh after creation
       else {
-        const updatedSessions = [...mockSessions, {
-          id: "3",
-          user_id: "user1",
-          name: "Session 3",
-          started_at: "2025-05-04T10:00:00Z",
-          stopped_at: null,
-          active: true,
-          duration: null,
-        }];
-        
+        const updatedSessions = [
+          ...mockSessions,
+          {
+            id: "3",
+            user_id: "user1",
+            name: "Session 3",
+            started_at: "2025-05-04T10:00:00Z",
+            stopped_at: null,
+            active: true,
+            duration: null,
+          },
+        ];
+
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            error: "",
-            data: { sessions: updatedSessions },
-          }),
+          json: () =>
+            Promise.resolve({
+              error: "",
+              data: { sessions: updatedSessions },
+            }),
         }) as unknown as Response;
       }
     });
@@ -329,15 +382,17 @@ describe("Session Management", () => {
       const actual = await import("../app/home/page");
       return { ...actual };
     });
-    
+
     // Re-import the Home component
     const { default: ActualHome } = await import("../app/home/page");
-    
+
     render(<ActualHome />);
 
     // Wait for sessions to load
     await waitFor(() => {
-      expect(screen.queryByText(/Loading sessions.../i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Loading sessions.../i),
+      ).not.toBeInTheDocument();
     });
 
     // Click the "New Session" button
@@ -353,7 +408,7 @@ describe("Session Management", () => {
           headers: expect.objectContaining({
             Authorization: "Bearer mock-token",
           }),
-        })
+        }),
       );
     });
   });
@@ -364,15 +419,17 @@ describe("Session Management", () => {
       const actual = await import("../app/home/page");
       return { ...actual };
     });
-    
+
     // Re-import the Home component
     const { default: ActualHome } = await import("../app/home/page");
-    
+
     render(<ActualHome />);
 
     // Wait for sessions to load
     await waitFor(() => {
-      expect(screen.queryByText(/Loading sessions.../i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Loading sessions.../i),
+      ).not.toBeInTheDocument();
     });
 
     // Find and click the stop button for the active session
@@ -388,7 +445,7 @@ describe("Session Management", () => {
           headers: expect.objectContaining({
             Authorization: "Bearer mock-token",
           }),
-        })
+        }),
       );
     });
   });
@@ -399,15 +456,17 @@ describe("Session Management", () => {
       const actual = await import("../app/home/page");
       return { ...actual };
     });
-    
+
     // Re-import the Home component
     const { default: ActualHome } = await import("../app/home/page");
-    
+
     render(<ActualHome />);
 
     // Wait for sessions to load
     await waitFor(() => {
-      expect(screen.queryByText(/Loading sessions.../i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Loading sessions.../i),
+      ).not.toBeInTheDocument();
     });
 
     // Find and click the delete button for the first session
@@ -416,7 +475,9 @@ describe("Session Management", () => {
 
     // Find the dialog content and get the delete button within it
     const dialogContent = screen.getAllByTestId("alert-dialog-content")[0];
-    const confirmDeleteButton = within(dialogContent).getByTestId("alert-dialog-action");
+    const confirmDeleteButton = within(dialogContent).getByTestId(
+      "alert-dialog-action",
+    );
     fireEvent.click(confirmDeleteButton);
 
     // Verify delete session API was called
@@ -428,7 +489,7 @@ describe("Session Management", () => {
           headers: expect.objectContaining({
             Authorization: "Bearer mock-token",
           }),
-        })
+        }),
       );
     });
   });
@@ -451,10 +512,10 @@ describe("Session Management", () => {
       const actual = await import("../app/home/page");
       return { ...actual };
     });
-    
+
     // Re-import the Home component
     const { default: ActualHome } = await import("../app/home/page");
-    
+
     render(<ActualHome />);
 
     // Verify redirect was called

@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   api:
     build:
@@ -9,9 +8,9 @@ services:
       - "8080:8080"
     environment:
       APP_ENV: ${APP_ENV:-dev}
-
+      PORT: 8080
       DB_HOST: db
-
+      DB_PORT: 5432
       DB_DATABASE: ${DB_DATABASE:-orchestrator}
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}

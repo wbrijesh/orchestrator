@@ -1,7 +1,13 @@
-"use client"
+"use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import Cookies from 'js-cookie';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import Cookies from "js-cookie";
 
 interface User {
   id: string;
@@ -14,7 +20,12 @@ interface UserContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    firstName: string,
+    lastName: string,
+  ) => Promise<void>;
   logout: () => void;
   clearError: () => void;
   getAuthHeader: () => { Authorization: string } | {};
@@ -43,14 +54,14 @@ const API_URL = "http://localhost:8080";
 
 // Helper function to save token in both localStorage and cookie
 const saveToken = (token: string) => {
-  localStorage.setItem('token', token);
-  Cookies.set('token', token, { expires: 7, path: '/' }); // Set cookie to expire in 7 days
+  localStorage.setItem("token", token);
+  Cookies.set("token", token, { expires: 7, path: "/" }); // Set cookie to expire in 7 days
 };
 
 // Helper function to remove token from both localStorage and cookie
 const removeToken = () => {
-  localStorage.removeItem('token');
-  Cookies.remove('token', { path: '/' });
+  localStorage.removeItem("token");
+  Cookies.remove("token", { path: "/" });
 };
 
 export function UserProvider({ children }: { children: ReactNode }) {
@@ -59,12 +70,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Check if user is already logged in
-    const storedUser = localStorage.getItem('user');
+    const storedUser = localStorage.getItem("user");
     if (storedUser) {
       try {
         setUser(JSON.parse(storedUser));
       } catch (e) {
-        console.error('Failed to parse stored user data');
+        console.error("Failed to parse stored user data");
       }
     }
     setLoading(false);
@@ -75,86 +86,89 @@ export function UserProvider({ children }: { children: ReactNode }) {
   };
 
   const getAuthHeader = () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem("token");
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
   const login = async (email: string, password: string): Promise<void> => {
     try {
       const response = await fetch(`${API_URL}/login`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ email, password }),
       });
-      
+
       const apiResponse: APIResponse<AuthResponseData> = await response.json();
-      
+
       // Check if there's an error in the response
       if (apiResponse.error) {
         throw new Error(apiResponse.error);
       }
-      
+
       // Make sure we have data
       if (!apiResponse.data) {
-        throw new Error('No data received from server');
+        throw new Error("No data received from server");
       }
-      
+
       const userData = {
         id: apiResponse.data.user.id,
         email: apiResponse.data.user.email,
         firstName: apiResponse.data.user.first_name,
         lastName: apiResponse.data.user.last_name,
       };
-      
+
       setUser(userData);
       saveToken(apiResponse.data.token);
-      localStorage.setItem('user', JSON.stringify(userData));
-      
+      localStorage.setItem("user", JSON.stringify(userData));
     } catch (err) {
       throw err;
     }
   };
 
-  const register = async (email: string, password: string, firstName: string, lastName: string): Promise<void> => {
+  const register = async (
+    email: string,
+    password: string,
+    firstName: string,
+    lastName: string,
+  ): Promise<void> => {
     try {
       const response = await fetch(`${API_URL}/register`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ 
-          email, 
-          password, 
-          first_name: firstName, 
-          last_name: lastName 
+        body: JSON.stringify({
+          email,
+          password,
+          first_name: firstName,
+          last_name: lastName,
         }),
       });
-      
+
       const apiResponse: APIResponse<AuthResponseData> = await response.json();
-      
+
       // Check if there's an error in the response
       if (apiResponse.error) {
         throw new Error(apiResponse.error);
       }
-      
+
       // Make sure we have data
       if (!apiResponse.data) {
-        throw new Error('No data received from server');
+        throw new Error("No data received from server");
       }
-      
+
       const userData = {
         id: apiResponse.data.user.id,
         email: apiResponse.data.user.email,
         firstName: apiResponse.data.user.first_name,
         lastName: apiResponse.data.user.last_name,
       };
-      
+
       setUser(userData);
       saveToken(apiResponse.data.token);
-      localStorage.setItem('user', JSON.stringify(userData));
-      
+      localStorage.setItem("user", JSON.stringify(userData));
     } catch (err) {
       throw err;
     }
@@ -163,19 +177,21 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     removeToken();
-    localStorage.removeItem('user');
+    localStorage.removeItem("user");
   };
 
   return (
-    <UserContext.Provider value={{ 
-      user, 
-      loading, 
-      login, 
-      register, 
-      logout, 
-      clearError,
-      getAuthHeader
-    }}>
+    <UserContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        logout,
+        clearError,
+        getAuthHeader,
+      }}
+    >
       {children}
     </UserContext.Provider>
   );
@@ -184,7 +200,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 export function useUser() {
   const context = useContext(UserContext);
   if (context === undefined) {
-    throw new Error('useUser must be used within a UserProvider');
+    throw new Error("useUser must be used within a UserProvider");
   }
   return context;
 }

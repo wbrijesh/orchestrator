@@ -38,8 +38,8 @@ func defaultNewClient() BrowserClient {
 	// Get base URL from environment or use default
 	baseURL := os.Getenv("BROWSER_SERVER_URL")
 	if baseURL == "" {
-		// Default to localhost
-		baseURL = "http://localhost:8000"
+		// For Docker Compose setups, we should use the service name
+		baseURL = "http://host.docker.internal:8000"
 	}
 
 	// Log the URL we're using
@@ -73,14 +73,14 @@ type ViewportSize struct {
 
 // SessionResponse represents a browser session from the browser server
 type SessionResponse struct {
-	ID           string        `json:"id"`
-	BrowserType  string        `json:"browser_type"`
-	Headless     bool          `json:"headless"`
-	CreatedAt    FlexibleTime  `json:"created_at"`
-	ExpiresAt    FlexibleTime  `json:"expires_at"`
-	CdpURL       string        `json:"cdp_url"`
-	ViewportSize ViewportSize  `json:"viewport_size"`
-	UserAgent    *string       `json:"user_agent,omitempty"`
+	ID           string       `json:"id"`
+	BrowserType  string       `json:"browser_type"`
+	Headless     bool         `json:"headless"`
+	CreatedAt    FlexibleTime `json:"created_at"`
+	ExpiresAt    FlexibleTime `json:"expires_at"`
+	CdpURL       string       `json:"cdp_url"`
+	ViewportSize ViewportSize `json:"viewport_size"`
+	UserAgent    *string      `json:"user_agent,omitempty"`
 }
 
 // ErrorResponse represents an error from the browser server
@@ -101,11 +101,11 @@ func (ft *FlexibleTime) UnmarshalJSON(data []byte) error {
 
 	// Try parsing with different formats, starting with the most specific
 	formats := []string{
-		time.RFC3339Nano,          // With timezone, nanoseconds
-		time.RFC3339,              // With timezone
-		"2006-01-02T15:04:05.999999",  // No timezone, microseconds
-		"2006-01-02T15:04:05.999",     // No timezone, milliseconds
-		"2006-01-02T15:04:05",         // No timezone
+		time.RFC3339Nano,             // With timezone, nanoseconds
+		time.RFC3339,                 // With timezone
+		"2006-01-02T15:04:05.999999", // No timezone, microseconds
+		"2006-01-02T15:04:05.999",    // No timezone, milliseconds
+		"2006-01-02T15:04:05",        // No timezone
 	}
 
 	var err error

@@ -5,9 +5,10 @@ import (
 	"api-server/internal/database"
 	"context"
 	"encoding/json"
+	"crypto/rand"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"os"
 	"strings"
@@ -46,10 +47,18 @@ var (
 
 // RandomSessionName generates a random session name
 func RandomSessionName() string {
-	rand.Seed(time.Now().UnixNano())
-	adj := adjectives[rand.Intn(len(adjectives))]
-	noun := nouns[rand.Intn(len(nouns))]
-	return fmt.Sprintf("%s-%s-%d", adj, noun, rand.Intn(1000))
+	// Get a random adjective
+	adjIdx, _ := rand.Int(rand.Reader, big.NewInt(int64(len(adjectives))))
+	adj := adjectives[adjIdx.Int64()]
+	
+	// Get a random noun
+	nounIdx, _ := rand.Int(rand.Reader, big.NewInt(int64(len(nouns))))
+	noun := nouns[nounIdx.Int64()]
+	
+	// Get a random number between 0-999
+	num, _ := rand.Int(rand.Reader, big.NewInt(1000))
+	
+	return fmt.Sprintf("%s-%s-%d", adj, noun, num.Int64())
 }
 
 // Request and response structures

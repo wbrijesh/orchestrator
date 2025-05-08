@@ -5,8 +5,10 @@ services:
   api:
     build:
       target: dev  # Use the dev stage from Dockerfile
+    # In development, mount the source code for hot reloading with air.
+    # This will overwrite the built binary, so do not use this in production!
     volumes:
-      - ./api-server:/app  # Mount code for hot reloading
+      - ./api-server:/app  # Only for development hot reload (air)
       - /app/tmp  # Keep tmp dir inside container
     environment:
       APP_ENV: dev

@@ -8,15 +8,32 @@ import (
 )
 
 func TestNewServer(t *testing.T) {
-	// Save original PORT env var
+	// Save original env vars
 	originalPort := os.Getenv("PORT")
+	originalNRKey := os.Getenv("NEW_RELIC_LICENSE_KEY")
+	originalNRAppName := os.Getenv("NEW_RELIC_APP_NAME")
+	
 	defer func() {
+		// Restore original env vars
 		if originalPort != "" {
 			os.Setenv("PORT", originalPort)
 		} else {
 			os.Unsetenv("PORT")
 		}
+		if originalNRKey != "" {
+			os.Setenv("NEW_RELIC_LICENSE_KEY", originalNRKey)
+		} else {
+			os.Unsetenv("NEW_RELIC_LICENSE_KEY")
+		}
+		if originalNRAppName != "" {
+			os.Setenv("NEW_RELIC_APP_NAME", originalNRAppName)
+		} else {
+			os.Unsetenv("NEW_RELIC_APP_NAME")
+		}
 	}()
+	
+	// Set New Relic env vars to empty to avoid actual API calls during tests
+	os.Unsetenv("NEW_RELIC_LICENSE_KEY")
 
 	// Test with valid port
 	os.Setenv("PORT", "8080")
