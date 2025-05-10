@@ -38,8 +38,7 @@ func defaultNewClient() BrowserClient {
 	// Get base URL from environment or use default
 	baseURL := os.Getenv("BROWSER_SERVER_URL")
 	if baseURL == "" {
-		// For Docker Compose setups, we should use the service name
-		baseURL = "http://host.docker.internal:8000"
+		baseURL = "http://browser:8000"
 	}
 
 	// Log the URL we're using

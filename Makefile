@@ -15,8 +15,6 @@ else
   COMPOSE_FILES := -f docker-compose.yml -f docker-compose.dev.yml
 endif
 
-.PHONY: up down build logs ps clean clean-all help migrate-up migrate-down test itest
-
 help:
 	@echo "Available commands:"
 	@echo "  make up           Start all services in $(APP_ENV) mode"
@@ -79,3 +77,5 @@ test:
 itest:
 	@echo ">>> Running integration tests..."
 	@$(COMPOSE) $(COMPOSE_FILES) exec api go test ./internal/database -v
+
+.PHONY: up down build build-docker logs ps clean clean-all help migrate-up migrate-down test itest

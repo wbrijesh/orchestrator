@@ -51,7 +51,7 @@ Start the server:
 python main.py
 ```
 
-The API will be available at http://localhost:8000.
+The API will be available at http://0.0.0.0:8000.
 
 ### API Endpoints
 
@@ -77,7 +77,7 @@ Request body:
 
 **Example curl command:**
 ```bash
-curl -X POST http://localhost:8000/sessions \
+curl -X POST http://0.0.0.0:8000/sessions \
   -H "Content-Type: application/json" \
   -d '{
     "browser_type": "chromium",
@@ -99,7 +99,7 @@ GET /sessions
 
 **Example curl command:**
 ```bash
-curl -X GET http://localhost:8000/sessions
+curl -X GET http://0.0.0.0:8000/sessions
 ```
 
 #### Get session details
@@ -110,7 +110,7 @@ GET /sessions/{session_id}
 
 **Example curl command:**
 ```bash
-curl -X GET http://localhost:8000/sessions/550e8400-e29b-41d4-a716-446655440000
+curl -X GET http://0.0.0.0:8000/sessions/550e8400-e29b-41d4-a716-446655440000
 ```
 
 #### Delete a session
@@ -121,7 +121,7 @@ DELETE /sessions/{session_id}
 
 **Example curl command:**
 ```bash
-curl -X DELETE http://localhost:8000/sessions/550e8400-e29b-41d4-a716-446655440000
+curl -X DELETE http://0.0.0.0:8000/sessions/550e8400-e29b-41d4-a716-446655440000
 ```
 
 ## Development

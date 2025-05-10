@@ -21,7 +21,8 @@ CMD ["pnpm", "dev"]
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm build
+RUN pnpm build && pnpm export
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # Production stage
 FROM base AS prod

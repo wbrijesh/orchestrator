@@ -16,6 +16,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_SCHEMA: ${DB_SCHEMA:-public}
       GOPATH: /go
+      BROWSER_SERVER_URL: http://browser:8000
     depends_on:
       db:
         condition: service_healthy
@@ -31,6 +32,8 @@ services:
       - "8000:8000"
     environment:
       APP_ENV: ${APP_ENV:-dev}
+      DISPLAY: ":99.0"
+    command: ["sh", "-c", "Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset & python run.py"]
     networks:
       - orchestrator-net
 

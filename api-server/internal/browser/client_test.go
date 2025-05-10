@@ -29,8 +29,8 @@ func TestNewClient(t *testing.T) {
 	os.Unsetenv("BROWSER_SERVER_URL")
 	client := NewClient()
 	if c, ok := client.(*Client); ok {
-		if c.baseURL != "http://host.docker.internal:8000" && c.baseURL != "http://localhost:8000" {
-			t.Errorf("Expected default base URL to be http://host.docker.internal:8000 or http://localhost:8000, got %s", c.baseURL)
+		if c.baseURL != "http://0.0.0.0:8000" && c.baseURL != "http://0.0.0.0:8000" {
+			t.Errorf("Expected default base URL to be http://0.0.0.0:8000 or http://0.0.0.0:8000, got %s", c.baseURL)
 		}
 	} else {
 		t.Errorf("Expected client to be of type *Client")
