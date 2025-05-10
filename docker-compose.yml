@@ -29,11 +29,12 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8000:8000"      # API port
+      - "5900-5910:5900-5910"  # VNC ports range (one per display)
     environment:
       APP_ENV: ${APP_ENV:-dev}
-      DISPLAY: ":99.0"
-    command: ["sh", "-c", "Xvfb :99 -screen 0 1280x1024x24 -ac +extension GLX +render -noreset & python run.py"]
+      VNC_PASSWORD: ${VNC_PASSWORD:-vncpass}  # Default VNC password
+    command: ["python", "run.py"]
     networks:
       - orchestrator-net
 

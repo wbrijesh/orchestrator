@@ -1,3 +1,4 @@
+import os
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -72,8 +73,15 @@ async def delete_session(session_id: str):
 
 @app.on_event("startup")
 async def startup():
-    """Initialize the browser manager on startup"""
+    """Initialize the browser manager and screen manager on startup"""
+    # Initialize the browser manager
     await browser_manager.initialize()
+    
+    # Log that we're ready to handle browser sessions
+    print("Browser manager initialized and ready to create browser sessions")
+    print(f"VNC connections will be available on ports 5900-5910 with password: {os.environ.get('VNC_PASSWORD', 'vncpass')}")
+    
+    # Start the session cleanup task
     await session_manager.start_cleanup_task()
 
 
