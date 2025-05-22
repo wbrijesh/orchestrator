@@ -29,12 +29,6 @@ type NewClientFunc func() BrowserClient
 
 // defaultNewClient is the default implementation for creating a new browser client
 func defaultNewClient() BrowserClient {
-	// Check if we're in mock mode
-	if os.Getenv("BROWSER_SERVER_MOCK") == "true" {
-		log.Printf("Using mock browser client - no actual browser will be launched")
-		return &MockClient{}
-	}
-
 	// Get base URL from environment or use default
 	baseURL := os.Getenv("BROWSER_SERVER_URL")
 	if baseURL == "" {
@@ -52,7 +46,7 @@ func defaultNewClient() BrowserClient {
 	}
 }
 
-// NewClient is the exported function variable that can be overridden in tests
+// NewClient is the exported function variable for creating browser clients
 var NewClient NewClientFunc = defaultNewClient
 
 // CreateSessionRequest represents the parameters for creating a browser session
@@ -124,6 +118,18 @@ func (ft *FlexibleTime) UnmarshalJSON(data []byte) error {
 // Time converts FlexibleTime to standard time.Time
 func (ft FlexibleTime) Time() time.Time {
 	return time.Time(ft)
+}
+
+// MarshalJSON implements custom JSON marshaling for FlexibleTime so that
+// values round-trip correctly when the browser server or tests serialise the
+// struct. We pick RFC3339 which is already one of the supported formats in
+// UnmarshalJSON above.
+func (ft FlexibleTime) MarshalJSON() ([]byte, error) {
+	t := time.Time(ft)
+	if t.IsZero() {
+		return []byte("null"), nil
+	}
+	return []byte(fmt.Sprintf("\"%s\"", t.Format(time.RFC3339))), nil
 }
 
 // CreateSession creates a new browser session

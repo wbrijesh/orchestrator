@@ -9,11 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"api-server/internal/database"
 	"api-server/internal/server"
 )
 
 // serverInterface defines the methods we use from http.Server
-// This interface makes testing easier
+// Server interface definition
 type serverInterface interface {
 	ListenAndServe() error
 	Shutdown(ctx context.Context) error
@@ -96,11 +97,16 @@ var runServer = func(srv serverInterface, config ServerConfig, signalCtx context
 }
 
 func main() {
-	srv := server.NewServer()
+	db, err := database.New()
+	if err != nil {
+		log.Fatal(fmt.Errorf("failed to initialize database: %w", err))
+	}
+	srv, err := server.NewServer(db)
+	if err != nil {
+		log.Fatal(fmt.Errorf("failed to create server: %w", err))
+	}
 	config := DefaultServerConfig()
 	signalCtx := waitForSignal()
-
-	// Run server and handle errors
 	if err := runServer(srv, config, signalCtx); err != nil {
 		log.Fatal(err)
 	}

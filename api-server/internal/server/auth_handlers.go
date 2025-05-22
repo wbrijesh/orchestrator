@@ -5,6 +5,7 @@ import (
 	"api-server/internal/database"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -24,8 +25,12 @@ func toView(u *database.User) *database.UserView {
 func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// Log the incoming request
+	log.Printf("RegisterHandler: received request")
+
 	var req database.AuthRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("RegisterHandler: failed to decode request body: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(database.APIResponse{
 			Error: "bad request",
@@ -33,9 +38,12 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	log.Printf("RegisterHandler: processing request for email: %s", req.Email)
 	// hash the password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
+		log.Printf("RegisterHandler: failed to hash password: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(database.APIResponse{
 			Error: "server error",
@@ -49,13 +57,19 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		LastName:     req.LastName,
 		PasswordHash: string(hash),
 	}
+
+	log.Printf("RegisterHandler: creating user with email: %s", u.Email)
+
 	ctx := context.Background()
 	id, err := s.db.CreateUser(ctx, u)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
+		log.Printf("RegisterHandler: failed to create user: %v", err)
 		msg := "could not create user"
 		if strings.Contains(err.Error(), "duplicate key value") {
 			msg = "email already exists"
+			w.WriteHeader(http.StatusBadRequest)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 		json.NewEncoder(w).Encode(database.APIResponse{
 			Error: msg,
@@ -64,10 +78,12 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.ID = id
+	log.Printf("RegisterHandler: successfully created user with ID: %s", u.ID)
 
 	// generate token
 	token, err := auth.GenerateToken(u.ID.String())
 	if err != nil {
+		log.Printf("RegisterHandler: failed to generate token: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(database.APIResponse{
 			Error: "could not sign token",
@@ -75,6 +91,7 @@ func (s *Server) RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	log.Printf("RegisterHandler: successfully generated token for user: %s", u.Email)
 
 	authResponse := database.AuthResponse{
 		Token: token,

@@ -3,6 +3,7 @@ package server
 import (
 	"api-server/internal/database"
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 	"github.com/newrelic/go-agent/v3/newrelic"
@@ -41,6 +42,12 @@ func (d *DatabaseInstrumentation) startSegment(ctx context.Context, operation st
 	}
 
 	return segment, func() { segment.End() }
+}
+
+// DB returns the underlying sql.DB connection
+func (d *DatabaseInstrumentation) DB() *sql.DB {
+	// Delegate to the wrapped service
+	return d.db.DB()
 }
 
 // Health returns a map of health status information

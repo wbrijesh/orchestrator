@@ -16,6 +16,9 @@ import (
 
 // Service represents a service that interacts with a database.
 type Service interface {
+	// DB returns the underlying sql.DB connection
+	DB() *sql.DB
+
 	// Health returns a map of health status information.
 	// The keys and values in the map are service-specific.
 	Health() map[string]string
@@ -40,30 +43,76 @@ type service struct {
 	db *sql.DB
 }
 
+// DB returns the underlying sql.DB connection
+func (s *service) DB() *sql.DB {
+	return s.db
+}
+
 var (
-	database   = os.Getenv("DB_DATABASE")
-	password   = os.Getenv("DB_PASSWORD")
-	username   = os.Getenv("DB_USERNAME")
-	port       = os.Getenv("DB_PORT")
-	host       = os.Getenv("DB_HOST")
-	schema     = os.Getenv("DB_SCHEMA")
 	dbInstance *service
 )
 
-func New() Service {
-	// Reuse Connection
+// New creates a new database service using environment variables for configuration.
+func New() (Service, error) {
+	// Reuse existing connection if already initialised
 	if dbInstance != nil {
-		return dbInstance
+		return dbInstance, nil
 	}
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&search_path=%s", username, password, host, port, database, schema)
-	db, err := sql.Open("pgx", connStr)
+
+	// Read environment variables at call-time (not package init) so tests can
+	// inject values dynamically.
+	dbName := os.Getenv("DB_DATABASE")
+	pwd := os.Getenv("DB_PASSWORD")
+	user := os.Getenv("DB_USERNAME")
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+	schemaName := os.Getenv("DB_SCHEMA")
+
+	// Provide sensible default for search_path when not supplied
+	if schemaName == "" {
+		schemaName = "public"
+	}
+
+	// Basic sanity check
+	if host == "" || port == "" || user == "" || pwd == "" || dbName == "" {
+		return nil, fmt.Errorf("database environment variables not set")
+	}
+
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&search_path=%s",
+		user, pwd, host, port, dbName, schemaName)
+
+	svc, err := NewWithDSN(connStr)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to create database service: %w", err)
 	}
-	dbInstance = &service{
-		db: db,
+
+	dbInstance = svc
+	return dbInstance, nil
+}
+
+// NewWithDSN creates a new database service with the provided DSN.
+// It opens a connection to the database and verifies it's working.
+func NewWithDSN(dsn string) (*service, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	return dbInstance
+
+	// Verify the connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Set connection pool settings
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(25)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
+	return &service{db: db}, nil
 }
 
 // Health checks the health of the database connection by pinging the database.
@@ -79,7 +128,7 @@ func (s *service) Health() map[string]string {
 	if err != nil {
 		stats["status"] = "down"
 		stats["error"] = fmt.Sprintf("db down: %v", err)
-		log.Printf("db down: %v", err) // Log the error but don't terminate for testability
+		log.Printf("db down: %v", err) // Log the error but don't terminate
 		return stats
 	}
 
@@ -122,6 +171,6 @@ func (s *service) Health() map[string]string {
 // If the connection is successfully closed, it returns nil.
 // If an error occurs while closing the connection, it returns the error.
 func (s *service) Close() error {
-	log.Printf("Disconnected from database: %s", database)
+	log.Printf("Disconnected from database: %s", os.Getenv("DB_DATABASE"))
 	return s.db.Close()
 }

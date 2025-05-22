@@ -16,9 +16,9 @@ import (
 
 type Server struct {
 	port int
-
-	db    database.Service
+	db   database.Service
 	nrApp *newrelic.Application // New Relic application
+	*http.Server
 }
 
 // NewServerFunc defines function type for server creation
@@ -32,8 +32,15 @@ func getEnvOrDefaultString(key, defaultVal string) string {
 	return defaultVal
 }
 
-// NewServer is the default implementation for creating a new HTTP server
-var NewServer = func() *http.Server {
+// NewServer creates a new HTTP server with the given database service
+func NewServer(db database.Service) (*Server, error) {
+	if db == nil {
+		var err error
+		db, err = database.New()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize database for server: %w", err)
+		}
+	}
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 
 	// Initialize New Relic
@@ -46,33 +53,33 @@ var NewServer = func() *http.Server {
 
 	if err != nil {
 		log.Printf("Warning: failed to initialize New Relic: %v", err)
-		// Continue without New Relic if it fails to initialize
-		nrApp = nil
+		// Decide if this should be a fatal error or just a warning
+		// For now, continuing without New Relic if it fails
+		nrApp = nil // Ensure nrApp is nil if initialization failed
 	}
 
-	// Create database service with New Relic instrumentation if available
-	dbService := database.New()
+	// Wrap database service with New Relic instrumentation if available
 	if nrApp != nil {
-		dbService = &DatabaseInstrumentation{
-			db:    dbService,
+		db = &DatabaseInstrumentation{
+			db:    db,
 			nrApp: nrApp,
 		}
 	}
 
-	NewServer := &Server{
+	s := &Server{
 		port:  port,
-		db:    dbService,
+		db:    db,
 		nrApp: nrApp,
 	}
 
-	// Declare Server config
-	server := &http.Server{
-		Addr:         fmt.Sprintf("0.0.0.0:%d", NewServer.port), // Listen on all interfaces
-		Handler:      NewServer.RegisterRoutes(),
+	// Set up the HTTP server
+	s.Server = &http.Server{
+		Addr:         fmt.Sprintf("0.0.0.0:%d", port),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
+	s.Server.Handler = s.RegisterRoutes()
 
-	return server
+	return s, nil
 }

@@ -42,3 +42,4 @@
 /api-server/main
 /api-server/*templ.go
 /api-server/.DS_Store
+/api-server/coverage.*

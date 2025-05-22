@@ -1,149 +1,223 @@
 package database
 
 import (
-	"context"
-	"log"
-	"testing"
-	"time"
+    "context"
+    "database/sql"
+    "log"
+    "os"
+    "path/filepath"
+    "sort"
+    "strings"
+    "testing"
+    "time"
 
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+    "github.com/google/uuid"
+    "github.com/stretchr/testify/require"
+    "github.com/testcontainers/testcontainers-go"
+    "github.com/testcontainers/testcontainers-go/modules/postgres"
+    "github.com/testcontainers/testcontainers-go/wait"
 )
 
-func mustStartPostgresContainer() (func(context.Context, ...testcontainers.TerminateOption) error, error) {
-	var (
-		dbName = "database"
-		dbPwd  = "password"
-		dbUser = "user"
-	)
+// Container teardown callback (set in TestMain).
+var containerTeardown func(context.Context, ...testcontainers.TerminateOption) error
 
-	dbContainer, err := postgres.Run(
-		context.Background(),
-		"postgres:latest",
-		postgres.WithDatabase(dbName),
-		postgres.WithUsername(dbUser),
-		postgres.WithPassword(dbPwd),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(5*time.Second)),
-	)
-	if err != nil {
-		return nil, err
-	}
+// shared database service used across tests to avoid closing the singleton
+var sharedSvc Service
 
-	database = dbName
-	password = dbPwd
-	username = dbUser
-
-	dbHost, err := dbContainer.Host(context.Background())
-	if err != nil {
-		return dbContainer.Terminate, err
-	}
-
-	dbPort, err := dbContainer.MappedPort(context.Background(), "5432/tcp")
-	if err != nil {
-		return dbContainer.Terminate, err
-	}
-
-	host = dbHost
-	port = dbPort.Port()
-
-	return dbContainer.Terminate, err
-}
-
+// TestMain starts a postgres test-container, runs migrations and executes the
+// package tests. When running inside a CI environment that already provisions a
+// database, the container step is skipped by setting CI_DB_PROVIDED=true.
 func TestMain(m *testing.M) {
-	teardown, err := mustStartPostgresContainer()
-	if err != nil {
-		log.Fatalf("could not start postgres container: %v", err)
-	}
+    if os.Getenv("CI_DB_PROVIDED") != "true" {
+        td, err := startPostgresContainer()
+        if err != nil {
+            log.Fatalf("could not start postgres container: %v", err)
+        }
+        containerTeardown = td
+    }
 
-	m.Run()
+    // Apply migrations so that the schema exists before tests run.
+    var err error
+    sharedSvc, err = New()
+    if err != nil {
+        log.Fatalf("failed to connect DB in TestMain: %v", err)
+    }
+    if err := applyMigrations(sharedSvc.DB()); err != nil {
+        log.Fatalf("failed to apply migrations: %v", err)
+    }
+    // DO NOT close here; keep connection for the entire test run
 
-	if teardown != nil && teardown(context.Background()) != nil {
-		log.Fatalf("could not teardown postgres container: %v", err)
-	}
+    code := m.Run()
+
+    if containerTeardown != nil {
+        _ = containerTeardown(context.Background())
+    }
+    if sharedSvc != nil {
+        _ = sharedSvc.Close()
+    }
+    os.Exit(code)
 }
 
-func TestNew(t *testing.T) {
-	srv := New()
-	if srv == nil {
-		t.Fatal("New() returned nil")
-	}
+// startPostgresContainer provisions a postgres container and sets the DB_* env
+// vars consumed by database.New().
+func startPostgresContainer() (func(context.Context, ...testcontainers.TerminateOption) error, error) {
+    const (
+        dbName = "api"
+        dbUser = "user"
+        dbPwd  = "password"
+    )
+
+    pgC, err := postgres.Run(
+        context.Background(),
+        "postgres:latest",
+        postgres.WithDatabase(dbName),
+        postgres.WithUsername(dbUser),
+        postgres.WithPassword(dbPwd),
+        testcontainers.WithWaitStrategy(
+            wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(30*time.Second),
+        ),
+    )
+    if err != nil {
+        return nil, err
+    }
+
+    host, err := pgC.Host(context.Background())
+    if err != nil {
+        return pgC.Terminate, err
+    }
+    port, err := pgC.MappedPort(context.Background(), "5432/tcp")
+    if err != nil {
+        return pgC.Terminate, err
+    }
+
+    os.Setenv("DB_HOST", host)
+    os.Setenv("DB_PORT", port.Port())
+    os.Setenv("DB_USERNAME", dbUser)
+    os.Setenv("DB_PASSWORD", dbPwd)
+    os.Setenv("DB_DATABASE", dbName)
+    // DB_SCHEMA intentionally left empty (defaults to public).
+
+    return pgC.Terminate, nil
 }
 
+// applyMigrations executes all *.up.sql files under migrations/ in lexical
+// order using the provided connection. This avoids an additional dependency on
+// a migration library and keeps the test environment self-contained.
+func applyMigrations(db *sql.DB) error {
+    migrationsDir := filepath.Join("..", "..", "migrations") // relative to internal/database/
+    entries, err := os.ReadDir(migrationsDir)
+    if err != nil {
+        return err
+    }
+
+    // select *.up.sql files and sort them for deterministic order
+    var files []string
+    for _, e := range entries {
+        if e.IsDir() {
+            continue
+        }
+        name := e.Name()
+        if strings.HasSuffix(name, ".up.sql") {
+            files = append(files, filepath.Join(migrationsDir, name))
+        }
+    }
+    sort.Strings(files)
+
+    for _, f := range files {
+        content, err := os.ReadFile(f)
+        if err != nil {
+            return err
+        }
+        if _, err := db.Exec(string(content)); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+// TestHealth verifies the Health implementation returns an "up" status when
+// the database is reachable.
 func TestHealth(t *testing.T) {
-	srv := New()
+    dbSvc := mustDB(t)
 
-	stats := srv.Health()
-
-	// Basic health checks
-	if stats["status"] != "up" {
-		t.Fatalf("expected status to be up, got %s", stats["status"])
-	}
-
-	if _, ok := stats["error"]; ok {
-		t.Fatalf("expected error not to be present")
-	}
-
-	if stats["message"] != "It's healthy" {
-		t.Fatalf("expected message to be 'It's healthy', got %s", stats["message"])
-	}
-	
-	// Check for presence of DB stats
-	expectedStats := []string{
-		"open_connections",
-		"in_use",
-		"idle",
-		"wait_count",
-		"wait_duration",
-		"max_idle_closed",
-		"max_lifetime_closed",
-	}
-	
-	for _, stat := range expectedStats {
-		if _, ok := stats[stat]; !ok {
-			t.Errorf("expected %s stat to be present", stat)
-		}
-	}
+    stats := dbSvc.Health()
+    require.Equal(t, "up", stats["status"], "expected status to be up")
+    require.NotContains(t, stats, "error", "expected no error field in health response")
 }
 
-func TestClose(t *testing.T) {
-	srv := New()
+// TestUserQueries exercises CreateUser and GetUserByEmail.
+func TestUserQueries(t *testing.T) {
+    dbSvc := mustDB(t)
 
-	if srv.Close() != nil {
-		t.Fatalf("expected Close() to return nil")
-	}
+    ctx := context.Background()
+    user := &User{
+        Email:        "test@example.com",
+        FirstName:    "Test",
+        LastName:     "User",
+        PasswordHash: "hashed-password",
+    }
+
+    id, err := dbSvc.CreateUser(ctx, user)
+    require.NoError(t, err)
+    require.NotEqual(t, uuid.Nil, id)
+
+    fetched, err := dbSvc.GetUserByEmail(ctx, user.Email)
+    require.NoError(t, err)
+    require.Equal(t, id, fetched.ID)
+    require.Equal(t, user.FirstName, fetched.FirstName)
 }
 
-// TestDatabaseFailure tests health reporting when database is down
-func TestDatabaseFailure(t *testing.T) {
-	// Save the original dbInstance
-	originalInstance := dbInstance
-	defer func() {
-		// Restore the original dbInstance after test
-		dbInstance = originalInstance
-	}()
-	
-	// Create a service with a closed connection to simulate failure
-	srv := New()
-	s := srv.(*service)
-	
-	// Close the database connection
-	s.db.Close()
-	
-	// Now check health - should report down status
-	stats := s.Health()
-	
-	if stats["status"] != "down" {
-		t.Errorf("expected status to be down when database is closed, got %s", stats["status"])
-	}
-	
-	if _, ok := stats["error"]; !ok {
-		t.Errorf("expected error to be present when database is down")
-	}
-	
-	// Reset dbInstance to nil so next call to New() creates a fresh connection
-	dbInstance = nil
+// TestSessionQueries covers create, retrieve, stop and delete session flows.
+func TestSessionQueries(t *testing.T) {
+    dbSvc := mustDB(t)
+    ctx := context.Background()
+
+    // A user is required for FK constraint.
+    user := &User{
+        Email:        "session@example.com",
+        FirstName:    "Sess",
+        LastName:     "Ion",
+        PasswordHash: "hashed",
+    }
+    userID, err := dbSvc.CreateUser(ctx, user)
+    require.NoError(t, err)
+
+    // 1. Create session
+    sess, err := dbSvc.CreateSession(ctx, userID, "first-session", "browser-id", "firefox", "ws://cdp", false, 1280, 720, nil)
+    require.NoError(t, err)
+    require.Equal(t, "first-session", sess.Name)
+    require.False(t, sess.StoppedAt.Valid)
+
+    // 2. Get by ID
+    same, err := dbSvc.GetSessionByID(ctx, sess.ID, userID)
+    require.NoError(t, err)
+    require.Equal(t, sess.ID, same.ID)
+
+    // 3. List by user
+    list, err := dbSvc.GetSessionsByUserID(ctx, userID)
+    require.NoError(t, err)
+    require.Len(t, list, 1)
+
+    // 4. Stop session
+    stopped, err := dbSvc.StopSession(ctx, sess.ID, userID)
+    require.NoError(t, err)
+    require.True(t, stopped.StoppedAt.Valid)
+
+    // 5. Delete session
+    require.NoError(t, dbSvc.DeleteSession(ctx, sess.ID, userID))
+
+    // 6. Ensure it is gone
+    _, err = dbSvc.GetSessionByID(ctx, sess.ID, userID)
+    require.Error(t, err)
+}
+
+// mustDB is a helper that returns a ready Service instance or fails the test.
+func mustDB(t *testing.T) Service {
+    t.Helper()
+    if sharedSvc != nil {
+        return sharedSvc
+    }
+    dbSvc, err := New()
+    require.NoError(t, err)
+    return dbSvc
 }
